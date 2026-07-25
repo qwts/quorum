@@ -11,7 +11,7 @@
 // not a record with a different border.
 
 import { QuorumElement, define, h } from '../lib/element.js';
-import { isTerminal, phaseColor } from '../lib/phase.js';
+import { isTerminal, optionChipProps, phaseColor } from '../lib/phase.js';
 
 export class ProposalCard extends QuorumElement {
   static props = [
@@ -20,7 +20,7 @@ export class ProposalCard extends QuorumElement {
     'selectedOption', 'actionLabel', 'compact', 'selectable',
   ];
 
-  /** `[{ option, count?, total?, hidden? }]` — hidden during voting (protocol D6). */
+  /** `[{ option, count?, total?, hidden? }]` — `hidden` conceals the tally, never the label. */
   static data = ['options'];
 
   static styles = `
@@ -73,16 +73,14 @@ export class ProposalCard extends QuorumElement {
 
     const options = h('div', { class: 'options' });
     for (const option of this.list('options')) {
-      const chip = h('q-vote-chip', {
-        option: option.option,
-        // During voting a tally would be exactly the anchoring hidden ballots prevent.
-        count: voting ? null : option.count,
-        total: voting ? null : option.total,
-        'ballot-hidden': option.hidden === true,
-        selected: selected === option.option,
-        interactive: this.hasAttribute('selectable'),
-      });
-      options.append(chip);
+      // optionChipProps owns the label-vs-tally rule, and is unit-tested for it.
+      options.append(
+        h('q-vote-chip', {
+          ...optionChipProps(option, phase),
+          selected: selected === option.option,
+          interactive: this.bool('selectable'),
+        }),
+      );
     }
 
     return h(

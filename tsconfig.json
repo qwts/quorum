@@ -11,11 +11,19 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "erasableSyntaxOnly": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    // src/ui/lib/phase.js is pure phase logic with no DOM in it, so a Node
+    // test can import it directly and check the rules a browser would
+    // otherwise be needed to see. Checking it here — under the Node lib, with
+    // no DOM — is what keeps that true: the day someone reaches for
+    // `document` in it, this config fails and the unit test's premise is gone.
+    "allowJs": true,
+    "checkJs": true
   },
   "include": ["src/**/*.ts", "tests/**/*.ts"],
-  // src/ui targets the browser and has its own config with the DOM lib
-  // (src/ui/tsconfig.json, run by `npm run typecheck`). Its Node-side files
-  // are still checked here when a test imports them.
-  "exclude": ["src/ui"]
+  // The browser half of src/ui — the components and the element contract —
+  // is checked by src/ui/tsconfig.json, which has the DOM lib and no Node
+  // types. src/ui/drift.ts and src/ui/serve.ts are Node and stay here, so
+  // each file is checked against exactly the runtime it executes in.
+  "exclude": ["src/ui/**/*.js", "src/ui/elements.d.ts"]
 }

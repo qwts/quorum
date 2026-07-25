@@ -132,3 +132,25 @@ library implements the two-value union and records the delta as `D-1` in
   checks **screens**, which is where the acceptance criterion puts it, and not
   component internals.
 - **Blocking?** no.
+
+### Q10 — The reference JSX and screenshot 04 disagree about `ProposalOption.hidden`
+- **Where:** `design/components/deliberation/ProposalCard.jsx`, which forwards
+  `hidden={o.hidden}` to `VoteChip`'s own `hidden`, versus screenshot
+  `04-room-voting.png`.
+- **What I needed:** what a proposal's options look like during voting.
+- **Why the system does not answer it:** the `.d.ts` documents
+  `ProposalOption.hidden` without saying what it conceals, and the two other
+  sources say different things. `VoteChip`'s `hidden` replaces the label with
+  *ballot cast — hidden until close*, so following the JSX renders both options
+  identically and unreadably. Screenshot 04 shows **Add version field now** and
+  **Defer to v1** both named, with no counts.
+- **What I did instead:** followed the screenshot — the label always shows,
+  `hidden` conceals the tally. The rule lives in `optionChipProps()` in
+  `lib/phase.js` and is unit-tested, because it is invisible when wrong: a
+  concealed option during voting looks deliberate, since concealment during
+  voting *is* the design. Found in review on
+  [#25](https://github.com/qwts/quorum/pull/25); I had ported the JSX.
+- **For the design side:** the reference implementation looks like the bug, not
+  the screenshot. Worth a line in the `.d.ts` either way, since the next porter
+  meets the same fork.
+- **Blocking?** no.

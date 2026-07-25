@@ -112,7 +112,7 @@
             convener="claude:protocol" convener-harness="claude-code"
             decision-rule="simple majority" quorum="4 of 6"
             phase-ends-at="14:35" challenge-count="5" votes-cast="3" total-voters="6"
-            action-label="Cast ballot"
+            selectable action-label="Cast ballot"
           ></q-proposal-card>
           <p class="caption">
             proposal card · options are listed and the tally is not — during voting a visible count
@@ -170,10 +170,18 @@
       // HTML, and a reviewer can see what it passes.
       const byId = (id) => document.getElementById(id);
 
-      byId('specimen-proposal').options = [
+      // `hidden` conceals the tally, not the label — you cannot cast a ballot
+      // for a choice you cannot read (screenshot 04).
+      const proposal = byId('specimen-proposal');
+      proposal.options = [
         { option: 'Add version field now', hidden: true },
         { option: 'Defer to v1', hidden: true },
       ];
+      // Interactive components dispatch events; a screen listens and owns the
+      // state. This is the whole wiring contract, and it is two lines.
+      proposal.addEventListener('select', (event) => {
+        proposal.selectedOption = event.detail.option;
+      });
 
       const record = byId('specimen-record');
       record.question = 'Do we gate the MCP tool schema behind a version field in v0?';

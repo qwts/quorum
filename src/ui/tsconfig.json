@@ -3,12 +3,19 @@
   // different runtimes with different globals, so they get different type
   // environments — which is what keeps a stray `document` in `src/domain` the
   // error it should be, and a stray `process` in a component likewise.
+  //
+  // `types: []` is the half that makes the second direction real. With
+  // @types/node loaded, a component reaching for `process.env` or `Buffer`
+  // would typecheck cleanly and then throw in the browser — the separation
+  // would be a comment rather than a check. src/ui's two Node-side files
+  // (drift.ts, serve.ts) are excluded here and covered by the root config,
+  // which has Node types and no DOM.
   "compilerOptions": {
     "target": "es2024",
     "lib": ["es2024", "dom", "dom.iterable"],
     "module": "preserve",
     "moduleResolution": "bundler",
-    "types": ["node"],
+    "types": [],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noEmit": true,
@@ -18,5 +25,5 @@
     "erasableSyntaxOnly": true,
     "skipLibCheck": true
   },
-  "include": ["**/*.js", "**/*.ts"]
+  "include": ["**/*.js", "elements.d.ts"]
 }

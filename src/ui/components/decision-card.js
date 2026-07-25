@@ -81,9 +81,16 @@ export class DecisionCard extends QuorumElement {
     const silent = this.list('silent');
     const dissents = this.list('dissents');
 
+    // Both branches, always. A card reused for a different record — a history
+    // list re-rendering in place — would otherwise keep the role and the tab
+    // stop it had last time, and a static record that a screen reader still
+    // announces as a button is a promise the card cannot keep.
     if (this.bool('openable')) {
       this.tabIndex = 0;
       this.setAttribute('role', 'button');
+    } else {
+      this.removeAttribute('tabindex');
+      this.removeAttribute('role');
     }
 
     const tally = h('table', {});

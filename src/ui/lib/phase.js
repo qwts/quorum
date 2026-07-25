@@ -60,3 +60,32 @@ export function phaseTint(phase) {
 export function isTerminal(phase) {
   return phase === 'converged' || phase === 'failed';
 }
+
+/**
+ * What a proposal's option hands its vote chip, given the phase.
+ *
+ * A pure function rather than three lines inside `render()`, because the rule
+ * it encodes is easy to get subtly wrong and invisible once it is wrong:
+ * **`hidden` conceals the tally, never the label.** You cannot cast a ballot
+ * for a choice you cannot read, and two options that both say "hidden" are not
+ * a ballot, they are a coin toss. The design's reference JSX forwards `hidden`
+ * straight to the chip's own `hidden`, which blanks the label; screenshot 04
+ * shows both options named during voting, and the screenshot is the design.
+ *
+ * It lives here, away from the DOM, so it can be tested in Node without a
+ * browser — which is the only reason this rule is checkable at all today.
+ *
+ * @param {{option: string, count?: number, total?: number, hidden?: boolean}} option
+ * @param {string} [phase]
+ * @returns {{option: string, count: number|null, total: number|null}}
+ */
+export function optionChipProps(option, phase) {
+  // During voting a visible count is exactly the anchoring hidden ballots
+  // exist to prevent — suppressed by phase, and per option when asked.
+  const concealTally = phase === 'voting' || option.hidden === true;
+  return {
+    option: option.option,
+    count: concealTally ? null : (option.count ?? null),
+    total: concealTally ? null : (option.total ?? null),
+  };
+}

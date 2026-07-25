@@ -14,6 +14,9 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { checkDesignDrift, designVersion } from '../src/ui/drift.ts';
+// A browser module, imported in Node on purpose: the phase rules are pure, so
+// they are testable without a browser, and the one below is worth testing.
+import { optionChipProps } from '../src/ui/lib/phase.js';
 import { serveUi } from '../src/ui/serve.ts';
 
 const UI = new URL('../src/ui/', import.meta.url).pathname;
@@ -57,6 +60,40 @@ test('every delta from the shipped design carries a reason', () => {
     questions.split('### Q').length > 5,
     'an empty QUESTIONS.md next to an invented value is the failure this file exists to prevent',
   );
+});
+
+test('a hidden option hides its tally and never its label', () => {
+  // You cannot cast a ballot for a choice you cannot read. Two options that
+  // both render as "hidden" are not a ballot, they are a coin toss — and the
+  // failure looks deliberate, because concealment during voting *is* the
+  // design. Screenshot 04 is the arbiter: both options named, no counts.
+  const options = [
+    { option: 'Add version field now', count: 3, total: 4, hidden: true },
+    { option: 'Defer to v1', count: 1, total: 4 },
+  ];
+
+  for (const phase of ['challenging', 'voting', 'converged', 'failed']) {
+    for (const option of options) {
+      assert.equal(
+        optionChipProps(option, phase).option,
+        option.option,
+        `the label disappeared in ${phase} — no phase conceals which option you are voting for`,
+      );
+    }
+  }
+
+  // Voting conceals every tally, whatever the option says.
+  for (const option of options) {
+    assert.deepEqual(optionChipProps(option, 'voting'), { option: option.option, count: null, total: null });
+  }
+
+  // After close the tally is the record; `hidden` still suppresses its own.
+  assert.deepEqual(optionChipProps(options[1]!, 'converged'), {
+    option: 'Defer to v1',
+    count: 1,
+    total: 4,
+  });
+  assert.equal(optionChipProps(options[0]!, 'converged').count, null, '`hidden` suppresses this option`s tally');
 });
 
 test('screen code contains no literal colour, size or duration', () => {
