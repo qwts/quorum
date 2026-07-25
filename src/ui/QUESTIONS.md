@@ -75,6 +75,20 @@ library implements the two-value union and records the delta as `D-1` in
   about re-casting at all. Recorded as `D-2`.
 - **Blocking?** no for the library; **yes for the overlay screen**, which has to
   say something in that spot.
+- **Ruled 2026-07-25 — routed to the designer, not settled here.** Our human's
+  call: a copy change goes through the design side, because the original intent
+  is to keep implementing agents out of design territory. So the answer to Q6 is
+  not a sentence; it is *which desk the sentence comes from*. `D-2` stands, the
+  spot stays empty until the design system speaks, and the overlay screen waits
+  on it rather than shipping a placeholder that would become the answer by
+  default.
+
+  Worth naming: this exercised a path the sync procedure does not document.
+  `DESIGN_VERSION.md` describes drift in one direction — the design moves, the
+  library triages. Here the *implementation* found the design contradicting a
+  merged protocol decision, and there is no written route back upstream. See
+  "When the library finds the design wrong" in `README.md` for the route this
+  question took, so the next one does not have to be invented.
 
 ### Q7 — `_ds_manifest.json` is not in the handoff
 - **Where:** `src/ui/drift.ts`, and `DESIGN_VERSION.md` §"Sync procedure" step 2.

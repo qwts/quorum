@@ -94,6 +94,32 @@ token, a new variant, a new phase, a new semantic colour, or a "small" addition
 to the palette or the type scale — none of which happen here. A gap surfaces as
 a question to our human, not as a component.
 
+## When the library finds the design wrong
+
+The sync procedure in [`DESIGN_VERSION.md`](DESIGN_VERSION.md) describes drift in
+one direction: the design moves, the library triages. The other direction
+happens too — while porting `0.2.0` the overlay's ballot copy turned out to
+contradict a merged protocol decision (`QUESTIONS.md` Q6) — and it has no
+written route, so here is the one that question took:
+
+1. **Implement neither side.** Not the design's version, not a corrected one.
+   Leave the spot empty and let the gap be visible. A placeholder becomes the
+   answer by default, and nobody ever notices it was a guess.
+2. **Write it as a question**, with the two sources that disagree and what each
+   one says. Record the delta in `design-version.json` as a `conflict`.
+3. **Route it to the design side.** A copy change, a hue, a variant, a spacing
+   step — those are design decisions wherever the error was found, and finding
+   an error does not confer the authority to fix it. Implementing agents stay
+   out of design territory; that is the whole point of the boundary.
+4. **The design system answers and bumps its version.** The library implements
+   the answer and bumps `implements`.
+
+The rule that makes this work: **being right is not the same as being the one to
+decide.** An implementer who spots a genuine contradiction has done the job
+correctly by *reporting* it. Fixing it locally would resolve the contradiction
+and lose the design system in the same commit — the second time, nobody would
+know which of the two was authoritative.
+
 ## Why custom elements, and why no build step
 
 Two decisions the handoff deliberately left open, settled here rather than by
