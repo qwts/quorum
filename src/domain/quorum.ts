@@ -8,6 +8,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { SCHEMA } from './schema.ts';
 import { normalizePatterns, PatternError, scopesOverlap } from './glob.ts';
+import { openDeliberations } from './deliberation.ts';
+import { QuorumError } from './errors.ts';
+
+export { QuorumError };
 
 export type DecisionRule = 'majority' | 'unanimity';
 
@@ -32,6 +36,10 @@ export type Message = {
   roomId: string;
   participantId: string;
   body: string;
+  // Set when the message is a challenge tagged to a deliberation (D4 in
+  // docs/deliberation.md). The tag is the whole relationship: deliberation
+  // state references messages and never lives in them.
+  deliberationId: string | null;
   createdAt: number;
 };
 
@@ -68,11 +76,6 @@ export type QuorumOptions = {
 const DEFAULT_TTL_SECONDS = 30 * 60;
 const MAX_TTL_SECONDS = 12 * 60 * 60;
 
-// Domain errors reach agents as text. Any participant- or caller-authored
-// value interpolated into one is JSON-quoted at the throw site, so a room
-// named with a newline and a directive cannot read as guidance downstream.
-export class QuorumError extends Error {}
-
 type ClaimRow = {
   id: string;
   participant_id: string;
@@ -107,6 +110,7 @@ export function openQuorum(options: QuorumOptions = {}) {
   };
   addColumn('events', 'actor_id', 'TEXT');
   addColumn('participants', 'cursor', 'INTEGER NOT NULL DEFAULT 0');
+  addColumn('messages', 'deliberation_id', 'TEXT');
 
   // Everyone blocked in wait_for_events. Appending an event wakes them all;
   // each re-reads from its own cursor, so there is no per-waiter bookkeeping.
@@ -149,6 +153,13 @@ export function openQuorum(options: QuorumOptions = {}) {
     return { id: row.id, name: row.name, harness: row.harness, repo: row.repo, branch: row.branch };
   }
 
+  function isMember(roomId: string, participantId: string): boolean {
+    return (
+      db.prepare('SELECT 1 FROM room_members WHERE room_id = ? AND participant_id = ?').get(roomId, participantId) !==
+      undefined
+    );
+  }
+
   function requireRoom(id: string): Room {
     const row = db.prepare('SELECT * FROM rooms WHERE id = ? OR name = ?').get(id, id) as
       | { id: string; name: string; topic: string | null; decision_rule: string; created_by: string }
@@ -169,6 +180,7 @@ export function openQuorum(options: QuorumOptions = {}) {
   // read-time obligation, so a server that was down for an hour comes back
   // with exactly the claims that are still live.
   function sweepExpired(): void {
+    deliberations.sweep();
     const at = now();
     const rows = db
       .prepare('SELECT * FROM claims WHERE closed_at IS NULL AND expires_at <= ?')
@@ -197,7 +209,13 @@ export function openQuorum(options: QuorumOptions = {}) {
     const row = db
       .prepare('SELECT MIN(expires_at) AS next FROM claims WHERE closed_at IS NULL')
       .get() as { next: number | null } | undefined;
-    return row?.next ?? null;
+    const claim = row?.next ?? null;
+    // A blocked waiter must also wake for a phase deadline — the voting that
+    // opens or the close that lands is somebody's call to vote (1.1 #8).
+    const phase = deliberations.nextDeadline();
+    if (claim === null) return phase;
+    if (phase === null) return claim;
+    return Math.min(claim, phase);
   }
 
   function readEventsAfter(afterSeq: number, limit: number): QuorumEvent[] {
@@ -259,6 +277,10 @@ export function openQuorum(options: QuorumOptions = {}) {
     }
     return now() + Math.round(ttl * 1000);
   }
+
+  // The deliberation protocol composes over the same db and feed; the Deps
+  // object is the entire seam (docs/deliberation.md §8).
+  const deliberations = openDeliberations({ db, now, appendEvent, requireParticipant, requireRoom, isMember });
 
   return {
     close(): void {
@@ -413,25 +435,31 @@ export function openQuorum(options: QuorumOptions = {}) {
       return room;
     },
 
-    postMessage(input: { room: string; participantId: string; body: string }): Message {
+    postMessage(input: { room: string; participantId: string; body: string; deliberationId?: string }): Message {
       const participant = requireParticipant(input.participantId);
       const room = requireRoom(input.room);
-      const member = db
-        .prepare('SELECT 1 FROM room_members WHERE room_id = ? AND participant_id = ?')
-        .get(room.id, participant.id);
-      if (!member) throw new QuorumError(`join ${JSON.stringify(room.name)} before posting to it`);
+      if (!isMember(room.id, participant.id)) {
+        throw new QuorumError(`join ${JSON.stringify(room.name)} before posting to it`);
+      }
       const body = input.body?.trim();
       if (!body) throw new QuorumError('message body is required');
+      // A challenge is this same message with a tag (deliberation.md D4); the
+      // protocol's only involvement is the phase gate.
+      const deliberationId = input.deliberationId ?? null;
+      if (deliberationId !== null) deliberations.assertChallengeOpen(deliberationId, room.id);
 
       const at = now();
       const result = db
-        .prepare('INSERT INTO messages (room_id, participant_id, body, created_at) VALUES (?, ?, ?, ?)')
-        .run(room.id, participant.id, body, at);
+        .prepare(
+          'INSERT INTO messages (room_id, participant_id, body, deliberation_id, created_at) VALUES (?, ?, ?, ?, ?)',
+        )
+        .run(room.id, participant.id, body, deliberationId, at);
       const message: Message = {
         id: Number(result.lastInsertRowid),
         roomId: room.id,
         participantId: participant.id,
         body,
+        deliberationId,
         createdAt: at,
       };
       appendEvent('message', room.id, { message, from: participant.name }, participant.id);
@@ -448,6 +476,7 @@ export function openQuorum(options: QuorumOptions = {}) {
         room_id: string;
         participant_id: string;
         body: string;
+        deliberation_id: string | null;
         created_at: number;
       }[];
       return rows.map((row) => ({
@@ -455,6 +484,7 @@ export function openQuorum(options: QuorumOptions = {}) {
         roomId: row.room_id,
         participantId: row.participant_id,
         body: row.body,
+        deliberationId: row.deliberation_id,
         createdAt: row.created_at,
       }));
     },
@@ -570,6 +600,15 @@ export function openQuorum(options: QuorumOptions = {}) {
       const cursor = storedCursor(participantId);
       return { cursor, unseen: unseenCount(cursor) };
     },
+
+    // The deliberation protocol (docs/deliberation.md, requirements 1.1
+    // #3–#6), composed from src/domain/deliberation.ts.
+    propose: deliberations.propose,
+    closeChallenges: deliberations.closeChallenges,
+    vote: deliberations.vote,
+    getDeliberation: deliberations.getDeliberation,
+    listDecisions: deliberations.listDecisions,
+    getDecision: deliberations.getDecision,
 
     // Cursor long-poll: block until events pass the caller's cursor. The wake
     // deadline is the earlier of the caller's timeout and the next lease
