@@ -1,0 +1,8 @@
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--surface-app);color:var(--text-body);font:var(--type-body);letter-spacing:var(--ls-normal);-webkit-font-smoothing:antialiased;text-wrap:pretty}
+a{color:var(--text-link);text-decoration:none;border-bottom:1px solid color-mix(in oklab,var(--text-link) 40%,transparent)}
+a:hover{color:var(--brass-500);border-bottom-color:var(--brass-500)}
+code,kbd,samp,pre{font-family:var(--font-mono);font-size:var(--fs-12)}
+::selection{background:var(--brass-600);color:var(--fg-1)}
+:focus-visible{outline:2px solid var(--focus-ring);outline-offset:1px}
+::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:var(--ink-500);border-radius:var(--radius-pill);border:3px solid transparent;background-clip:content-box}::-webkit-scrollbar-track{background:transparent}

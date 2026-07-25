@@ -1,0 +1,14 @@
+/* Dark UI: separation comes from hairlines and surface steps, not drop shadows.
+   Shadows appear only on things that genuinely float (overlay, menu) and on the
+   paper decision record, which casts a real one. */
+:root{
+--shadow-none:none;/* @kind shadow */
+--shadow-raised:0 1px 0 rgba(0,0,0,.4);
+--shadow-overlay:0 18px 44px -12px rgba(0,0,0,.72),0 0 0 1px var(--line-2);/* @kind shadow */
+--shadow-menu:0 10px 24px -8px rgba(0,0,0,.66),0 0 0 1px var(--line-2);
+--shadow-paper:0 1px 0 var(--paper-300),0 12px 28px -14px rgba(0,0,0,.6);
+--inset-hairline:inset 0 -1px 0 var(--line-1);/* @kind shadow */
+--glow-active-phase:0 0 0 1px currentColor,0 0 18px -6px currentColor;/* @kind shadow */
+--scrim:rgba(7,9,13,.68);/* @kind color */
+--blur-scrim:saturate(120%) blur(2px);/* @kind other */
+}

@@ -1,0 +1,22 @@
+{
+  // The UI runs in a browser; the rest of the repo runs in Node. Those are
+  // different runtimes with different globals, so they get different type
+  // environments — which is what keeps a stray `document` in `src/domain` the
+  // error it should be, and a stray `process` in a component likewise.
+  "compilerOptions": {
+    "target": "es2024",
+    "lib": ["es2024", "dom", "dom.iterable"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "skipLibCheck": true
+  },
+  "include": ["**/*.js", "**/*.ts"]
+}

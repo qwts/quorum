@@ -1,0 +1,6 @@
+/* Quorum ships no webfonts of its own — the repo (qwts/quorum) contains no UI
+   layer yet. IBM Plex is the substitution: an engineering-lab sans with a true
+   mono and serif companion, loaded from Google Fonts.
+   Sans + Mono carry the product UI; Serif is reserved for decision records. */
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap");
+:root{--font-sans:"IBM Plex Sans","Helvetica Neue",system-ui,sans-serif;--font-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;--font-serif:"IBM Plex Serif",Georgia,serif}

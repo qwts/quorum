@@ -1,0 +1,10 @@
+/* 2px-rooted scale. Chat density beats a strict 8px grid: message rows use
+   --sp-3 vertical, panels --sp-4, never more. */
+:root{
+--sp-0:0;/* @kind spacing */--sp-1:2px;--sp-2:4px;--sp-3:6px;--sp-4:10px;--sp-5:14px;--sp-6:18px;--sp-7:24px;--sp-8:32px;--sp-9:44px;--sp-10:64px;
+--radius-xs:2px;--radius-sm:3px;--radius-md:5px;--radius-lg:8px;--radius-pill:999px;
+--border-width:1px;/* @kind spacing */--border-width-accent:2px;/* @kind spacing */
+/* fixed layout rails (desktop only — requirements §1.3) */
+--rail-nav:56px;--rail-sidebar:248px;--rail-roster:236px;--rail-composer-min:88px;--header-h:48px;
+--measure-message:74ch;/* @kind spacing */--measure-record:66ch;/* @kind spacing */
+}

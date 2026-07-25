@@ -13,5 +13,9 @@
     "erasableSyntaxOnly": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  // src/ui targets the browser and has its own config with the DOM lib
+  // (src/ui/tsconfig.json, run by `npm run typecheck`). Its Node-side files
+  // are still checked here when a test imports them.
+  "exclude": ["src/ui"]
 }

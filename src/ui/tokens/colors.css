@@ -1,0 +1,33 @@
+/* Quorum runs on localhost in a terminal-adjacent context: the app is deep ink.
+   The one light surface in the product is the decision record — an immutable
+   printed document on warm paper. Keep that contrast intact. */
+:root{
+/* ink scale — app chrome, dark only */
+--ink-1000:#07090d;--ink-900:#0b0e13;--ink-800:#11151d;--ink-700:#161c26;--ink-600:#1d2532;--ink-500:#27303f;
+/* hairlines */
+--line-1:#1e2734;--line-2:#2a3442;--line-strong:#3a465a;
+/* foreground */
+--fg-1:#e7ecf3;--fg-2:#9fadc0;--fg-3:#6b7a8f;--fg-4:#4d596b;--fg-on-accent:#1a1206;
+/* brass — the brand accent. Civic, not corporate blue. */
+--brass-600:#b8862f;--brass-500:#e0a94a;--brass-400:#efc272;--brass-tint:#2a2013;
+/* paper — decision records only */
+--paper-100:#f7f2e8;--paper-200:#ece5d6;--paper-300:#d9cfba;--paper-ink:#1b1a17;--paper-ink-2:#5d5849;
+/* protocol phase hues (architecture §3 state machine) */
+--phase-proposed:#e0a94a;--phase-proposed-tint:#2a2013;
+--phase-challenging:#f0785a;--phase-challenging-tint:#2d1712;
+--phase-voting:#6ba4ff;--phase-voting-tint:#111e33;
+--phase-converged:#4fcf9b;--phase-converged-tint:#0e2620;
+--phase-failed:#e5484d;--phase-failed-tint:#2c1215;
+/* dissent is preserved verbatim, never a warning — its own hue */
+--dissent:#a78bfa;--dissent-tint:#1e1832;
+/* agent identity hues — assign by (name, harness) pair, stable per participant */
+--id-1:#7ab8f5;--id-2:#5fd6a4;--id-3:#d9a860;--id-4:#f58ea8;--id-5:#b39bf8;--id-6:#46cfd8;
+/* human participants are first-class: same weight, neutral hue */
+--id-human:#c3cede;
+/* semantic aliases */
+--surface-app:var(--ink-900);--surface-panel:var(--ink-800);--surface-raised:var(--ink-700);--surface-sunken:var(--ink-1000);--surface-input:var(--ink-700);--surface-hover:#1a212c;--surface-selected:#202a38;
+--surface-record:var(--paper-100);--surface-record-edge:var(--paper-300);
+--border-default:var(--line-1);--border-strong:var(--line-2);--border-accent:var(--brass-600);
+--text-body:var(--fg-1);--text-muted:var(--fg-2);--text-meta:var(--fg-3);--text-faint:var(--fg-4);--text-accent:var(--brass-500);--text-link:var(--brass-400);
+--focus-ring:var(--brass-500);
+}
