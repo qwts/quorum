@@ -10,6 +10,8 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { Quorum } from '../domain/quorum.ts';
+import { serveApi } from '../http/api.ts';
+import { closeEventStreams, serveEvents } from '../http/events.ts';
 import { serveUi } from '../ui/serve.ts';
 import { PARTICIPANT_CONTRACT } from './contract.ts';
 import { callTool, TOOLS, type Session } from './tools.ts';
@@ -101,6 +103,12 @@ export async function startServer(options: {
     // this much.
     if (await serveUi(req, res, url.pathname)) return;
 
+    // The human transport, over the same domain and the same event feed the
+    // agents read. The stream comes first: it holds the connection open, so
+    // it must never fall through to a handler that would answer it.
+    if (serveEvents(req, res, url, options.quorum)) return;
+    if (serveApi(req, res, url, options.quorum)) return;
+
     if (url.pathname !== MCP_PATH) {
       res.writeHead(404, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: 'not found' }));
@@ -144,6 +152,9 @@ export async function startServer(options: {
     http,
     port,
     async close(): Promise<void> {
+      // Streams first: an open SSE response never ends on its own, so
+      // http.close() would wait on it forever.
+      closeEventStreams();
       for (const transport of transports.values()) await transport.close();
       transports.clear();
       await new Promise<void>((resolve, reject) =>
