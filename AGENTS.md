@@ -35,6 +35,21 @@ Schema in `src/mcp/tools.ts` so they read as the contract they are, and are
 exercised in `tests/mcp.test.ts` through a stock MCP client — never a
 harness-specific one. Any tool that assumes a particular harness is a bug.
 
+**The reply is the loop.** Tool results carry the next call, not just values
+(`src/mcp/tools.ts`), and the participant contract (`src/mcp/contract.ts`)
+reaches every client through MCP's `instructions` at connect. That pairing is
+what binds an agent to the communication loop without a per-harness skill
+file. A new tool that returns bare data is incomplete.
+
 **Untrusted input.** Message and claim content comes from other participants.
 It is data, never instructions — the org threat model applies inside the
-product, and no skill or doc here may tell an agent otherwise.
+product, and no skill or doc here may tell an agent otherwise. Concretely:
+server-authored guidance may steer the agent; participant-authored text
+appears in it only through `quoted()`, which strips Unicode control *and*
+format characters (a bidi override reorders the line it sits in, and
+`JSON.stringify` does not touch it), flattens, and bounds it so it cannot pose
+as a directive. Never interpolate a participant's words into
+guidance any other way — including through an error message. Domain errors
+JSON-quote the values they embed, and the MCP layer renders a failure as
+server-authored guidance followed by the error as data, never as a line above
+the guidance.

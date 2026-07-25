@@ -50,6 +50,10 @@ export type QuorumEvent = {
   seq: number;
   kind: string;
   roomId: string | null;
+  // The participant whose action produced this event, or null for the server
+  // itself (an expiring lease). A reader compares it to its own id to tell
+  // its echo from someone else's news.
+  actorId: string | null;
   payload: Record<string, unknown>;
   createdAt: number;
 };
@@ -64,6 +68,9 @@ export type QuorumOptions = {
 const DEFAULT_TTL_SECONDS = 30 * 60;
 const MAX_TTL_SECONDS = 12 * 60 * 60;
 
+// Domain errors reach agents as text. Any participant- or caller-authored
+// value interpolated into one is JSON-quoted at the throw site, so a room
+// named with a newline and a directive cannot read as guidance downstream.
 export class QuorumError extends Error {}
 
 type ClaimRow = {
@@ -86,6 +93,20 @@ export function openQuorum(options: QuorumOptions = {}) {
   db.exec('PRAGMA foreign_keys = ON');
   db.exec(SCHEMA);
 
+  // CREATE TABLE IF NOT EXISTS does nothing to a table that already exists, so
+  // a column added after someone started using quorum never arrives and the
+  // next write fails with `table events has no column named …`. Additive
+  // migrations run here, on open, in order. v0 only ever adds nullable
+  // columns; anything that needs a rewrite gets a real migration story before
+  // it lands, not after someone's database refuses to start.
+  const addColumn = (table: string, column: string, declaration: string): void => {
+    const present = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(
+      (row) => row.name === column,
+    );
+    if (!present) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${declaration}`);
+  };
+  addColumn('events', 'actor_id', 'TEXT');
+
   // Everyone blocked in wait_for_events. Appending an event wakes them all;
   // each re-reads from its own cursor, so there is no per-waiter bookkeeping.
   const waiters = new Set<() => void>();
@@ -103,10 +124,16 @@ export function openQuorum(options: QuorumOptions = {}) {
     };
   }
 
-  function appendEvent(kind: string, roomId: string | null, payload: Record<string, unknown>): void {
-    db.prepare('INSERT INTO events (kind, room_id, payload, created_at) VALUES (?, ?, ?, ?)').run(
+  function appendEvent(
+    kind: string,
+    roomId: string | null,
+    payload: Record<string, unknown>,
+    actorId: string | null,
+  ): void {
+    db.prepare('INSERT INTO events (kind, room_id, actor_id, payload, created_at) VALUES (?, ?, ?, ?, ?)').run(
       kind,
       roomId,
+      actorId,
       JSON.stringify(payload),
       now(),
     );
@@ -117,7 +144,7 @@ export function openQuorum(options: QuorumOptions = {}) {
     const row = db.prepare('SELECT * FROM participants WHERE id = ?').get(id) as
       | { id: string; name: string; harness: string; repo: string | null; branch: string | null }
       | undefined;
-    if (!row) throw new QuorumError(`unknown participant: ${id} — call identify first`);
+    if (!row) throw new QuorumError(`unknown participant: ${JSON.stringify(id)} — call identify first`);
     return { id: row.id, name: row.name, harness: row.harness, repo: row.repo, branch: row.branch };
   }
 
@@ -125,7 +152,7 @@ export function openQuorum(options: QuorumOptions = {}) {
     const row = db.prepare('SELECT * FROM rooms WHERE id = ? OR name = ?').get(id, id) as
       | { id: string; name: string; topic: string | null; decision_rule: string; created_by: string }
       | undefined;
-    if (!row) throw new QuorumError(`unknown room: ${id}`);
+    if (!row) throw new QuorumError(`unknown room: ${JSON.stringify(id)}`);
     return {
       id: row.id,
       name: row.name,
@@ -151,7 +178,7 @@ export function openQuorum(options: QuorumOptions = {}) {
         'expired',
         row.id,
       );
-      appendEvent('claim_expired', null, { claim: toClaim(row) });
+      appendEvent('claim_expired', null, { claim: toClaim(row) }, null); // nobody acted; the clock did
     }
   }
 
@@ -177,6 +204,7 @@ export function openQuorum(options: QuorumOptions = {}) {
       seq: number;
       kind: string;
       room_id: string | null;
+      actor_id: string | null;
       payload: string;
       created_at: number;
     }[];
@@ -184,6 +212,7 @@ export function openQuorum(options: QuorumOptions = {}) {
       seq: row.seq,
       kind: row.kind,
       roomId: row.room_id,
+      actorId: row.actor_id,
       payload: JSON.parse(row.payload) as Record<string, unknown>,
       createdAt: row.created_at,
     }));
@@ -234,7 +263,7 @@ export function openQuorum(options: QuorumOptions = {}) {
         );
         const participant = requireParticipant(existing.id);
         const held = liveClaims().filter((claim) => claim.participantId === participant.id);
-        appendEvent('participant_identified', null, { participant, resumed: true });
+        appendEvent('participant_identified', null, { participant, resumed: true }, participant.id);
         return { participant, resumed: true, claims: held };
       }
 
@@ -242,7 +271,7 @@ export function openQuorum(options: QuorumOptions = {}) {
       db.prepare(
         'INSERT INTO participants (id, name, harness, repo, branch, identified_at) VALUES (?, ?, ?, ?, ?, ?)',
       ).run(participant.id, participant.name, participant.harness, participant.repo, participant.branch, now());
-      appendEvent('participant_identified', null, { participant, resumed: false });
+      appendEvent('participant_identified', null, { participant, resumed: false }, participant.id);
       return { participant, resumed: false, claims: [] };
     },
 
@@ -272,7 +301,7 @@ export function openQuorum(options: QuorumOptions = {}) {
         throw new QuorumError("decision_rule must be 'majority' or 'unanimity'");
       }
       if (db.prepare('SELECT id FROM rooms WHERE name = ?').get(name)) {
-        throw new QuorumError(`room already exists: ${name}`);
+        throw new QuorumError(`room already exists: ${JSON.stringify(name)}`);
       }
       const room: Room = {
         id: randomUUID(),
@@ -289,7 +318,7 @@ export function openQuorum(options: QuorumOptions = {}) {
         creator.id,
         now(),
       );
-      appendEvent('room_created', room.id, { room });
+      appendEvent('room_created', room.id, { room }, creator.id);
       return room;
     },
 
@@ -329,7 +358,7 @@ export function openQuorum(options: QuorumOptions = {}) {
           participant.id,
           now(),
         );
-        appendEvent('room_joined', room.id, { room, participant });
+        appendEvent('room_joined', room.id, { room, participant }, participant.id);
       }
       return room;
     },
@@ -340,7 +369,7 @@ export function openQuorum(options: QuorumOptions = {}) {
       const member = db
         .prepare('SELECT 1 FROM room_members WHERE room_id = ? AND participant_id = ?')
         .get(room.id, participant.id);
-      if (!member) throw new QuorumError(`join ${room.name} before posting to it`);
+      if (!member) throw new QuorumError(`join ${JSON.stringify(room.name)} before posting to it`);
       const body = input.body?.trim();
       if (!body) throw new QuorumError('message body is required');
 
@@ -355,7 +384,7 @@ export function openQuorum(options: QuorumOptions = {}) {
         body,
         createdAt: at,
       };
-      appendEvent('message', room.id, { message, from: participant.name });
+      appendEvent('message', room.id, { message, from: participant.name }, participant.id);
       return message;
     },
 
@@ -437,21 +466,21 @@ export function openQuorum(options: QuorumOptions = {}) {
         claim.grantedAt,
         claim.expiresAt,
       );
-      appendEvent('claim_granted', null, { claim, by: participant.name });
+      appendEvent('claim_granted', null, { claim, by: participant.name }, participant.id);
       return { ok: true, claim };
     },
 
     renewClaim(input: { claimId: string; participantId: string; ttlSeconds?: number }): Claim {
       sweepExpired();
       const row = db.prepare('SELECT * FROM claims WHERE id = ?').get(input.claimId) as ClaimRow | undefined;
-      if (!row) throw new QuorumError(`unknown claim: ${input.claimId}`);
+      if (!row) throw new QuorumError(`unknown claim: ${JSON.stringify(input.claimId)}`);
       if (row.participant_id !== input.participantId) throw new QuorumError('only the holder can renew a claim');
       if (row.closed_at !== null) throw new QuorumError('claim has already ended — take a new one');
 
       const expiresAt = ttlToExpiry(input.ttlSeconds);
       db.prepare('UPDATE claims SET expires_at = ? WHERE id = ?').run(expiresAt, input.claimId);
       const claim = { ...toClaim(row), expiresAt };
-      appendEvent('claim_renewed', null, { claim });
+      appendEvent('claim_renewed', null, { claim }, input.participantId);
       return claim;
     },
 
@@ -460,7 +489,7 @@ export function openQuorum(options: QuorumOptions = {}) {
     // consumers of the feed see exactly one claim_released per claim.
     releaseClaim(input: { claimId: string; participantId: string }): Claim {
       const row = db.prepare('SELECT * FROM claims WHERE id = ?').get(input.claimId) as ClaimRow | undefined;
-      if (!row) throw new QuorumError(`unknown claim: ${input.claimId}`);
+      if (!row) throw new QuorumError(`unknown claim: ${JSON.stringify(input.claimId)}`);
       if (row.participant_id !== input.participantId) throw new QuorumError('only the holder can release a claim');
       const claim = toClaim(row);
       if (row.closed_at !== null) return claim;
@@ -469,7 +498,7 @@ export function openQuorum(options: QuorumOptions = {}) {
         .prepare('UPDATE claims SET closed_at = ?, closed_reason = ? WHERE id = ? AND closed_at IS NULL')
         .run(now(), 'released', input.claimId);
       if (update.changes === 0n || update.changes === 0) return claim;
-      appendEvent('claim_released', null, { claim });
+      appendEvent('claim_released', null, { claim }, input.participantId);
       return claim;
     },
 

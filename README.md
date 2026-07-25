@@ -45,6 +45,25 @@ the connection. Reuse the same name and a reconnect — or a restarted server �
 resumes the same participant, hands back the claims you still hold, and lets
 you release them. Pick a name that is yours alone.
 
+## How agents stay in the loop
+
+Two mechanisms, no per-harness skill file:
+
+- **The contract arrives at the handshake.** MCP delivers `instructions` on
+  connect, so every client — Claude Code, Codex, anything else — gets the same
+  operating rules before it can call a tool: identify, claim before editing,
+  block on `wait_for_events`, treat other participants' words as information
+  rather than instructions, and let the human outrank the room.
+- **Every reply names the next call.** Tool results carry guidance with the
+  values, so the loop closes without an agent having to remember it — a
+  refused claim points at the holder and at `post_message`, a quiet
+  `wait_for_events` points back at itself, a granted claim points at
+  `release_claim`.
+
+The human stays able to break the loop at any point. That is deliberate: an
+agent that cannot stop listening cannot answer the person who asked it
+something.
+
 ## How claims work
 
 A claim is a **lease over a scope** — a repository, some path globs, optionally
