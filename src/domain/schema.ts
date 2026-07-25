@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS decisions (
   record          TEXT NOT NULL,  -- JSON snapshot: question, options, rule, roster, ballots, challenges, tally
   closed_at       INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS decisions_by_room ON decisions (room_id, closed_at);
 
 CREATE TABLE IF NOT EXISTS events (
   seq        INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -9,6 +9,9 @@ import { randomUUID } from 'node:crypto';
 import { SCHEMA } from './schema.ts';
 import { normalizePatterns, PatternError, scopesOverlap } from './glob.ts';
 import { openDeliberations } from './deliberation.ts';
+import { QuorumError } from './errors.ts';
+
+export { QuorumError };
 
 export type DecisionRule = 'majority' | 'unanimity';
 
@@ -72,11 +75,6 @@ export type QuorumOptions = {
 
 const DEFAULT_TTL_SECONDS = 30 * 60;
 const MAX_TTL_SECONDS = 12 * 60 * 60;
-
-// Domain errors reach agents as text. Any participant- or caller-authored
-// value interpolated into one is JSON-quoted at the throw site, so a room
-// named with a newline and a directive cannot read as guidance downstream.
-export class QuorumError extends Error {}
 
 type ClaimRow = {
   id: string;

@@ -10,7 +10,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
-import { QuorumError } from './quorum.ts';
+import { QuorumError } from './errors.ts';
 import type { DecisionRule, Participant, Room } from './quorum.ts';
 
 export type DeliberationPhase = 'challenging' | 'voting' | 'converged' | 'failed';
@@ -278,13 +278,23 @@ export function openDeliberations(deps: Deps) {
     // it was scheduled: a server asleep through the challenge deadline must
     // not eat the voters' window (deliberation.md §3).
     const endsAt = now() + row.vote_ttl;
-    db.prepare("UPDATE deliberations SET phase = 'voting', phase_ends_at = ? WHERE id = ?").run(endsAt, row.id);
-    appendEvent(
-      'voting_opened',
-      row.room_id,
-      { deliberationId: row.id, question: row.question, phaseEndsAt: endsAt },
-      actorId,
-    );
+    // Same discipline as close(): the phase change and the call-to-vote event
+    // commit together or not at all — a voting phase nobody was told about is
+    // a lost 1.1 #8 promise.
+    db.exec('BEGIN');
+    try {
+      db.prepare("UPDATE deliberations SET phase = 'voting', phase_ends_at = ? WHERE id = ?").run(endsAt, row.id);
+      appendEvent(
+        'voting_opened',
+        row.room_id,
+        { deliberationId: row.id, question: row.question, phaseEndsAt: endsAt },
+        actorId,
+      );
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
   }
 
   // Lazy deadline sweep, same pattern as claims: deadlines are computed at
@@ -388,7 +398,10 @@ export function openDeliberations(deps: Deps) {
       appendEvent(
         'deliberation_opened',
         room.id,
-        { deliberation, by: convener.name },
+        // deliberationId at the top level: §7 promises the common field on
+        // every deliberation event, so feed consumers correlate without
+        // knowing each payload's inner shape.
+        { deliberationId: deliberation.id, deliberation, by: convener.name },
         convener.id,
       );
       return deliberation;
@@ -401,7 +414,7 @@ export function openDeliberations(deps: Deps) {
       sweep();
       const row = requireDeliberation(deliberationId);
       if (row.room_id !== roomId) {
-        throw new QuorumError('challenge must be posted in the deliberation’s own room');
+        throw new QuorumError("challenge must be posted in the deliberation's own room");
       }
       if (row.phase !== 'challenging') throw phaseError(row, 'challenges are closed');
     },
