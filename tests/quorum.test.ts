@@ -4,6 +4,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { DatabaseSync } from 'node:sqlite';
+
 import { openQuorum, QuorumError } from '../src/domain/quorum.ts';
 
 function withClock(start = 1_700_000_000_000) {
@@ -294,6 +296,34 @@ test('a claim cannot carry an unbounded scope', () => {
   assert.throws(() => claim(Array.from({ length: 33 }, (_, index) => `src/${index}/**`)), /at most 32 patterns/);
   assert.throws(() => claim([`src/${'a'.repeat(300)}.ts`]), /longer than 256 characters/);
   quorum.close();
+});
+
+test('a database made before a column existed still opens', () => {
+  // The upgrade path someone actually hits: they ran quorum, we shipped a new
+  // column, they pulled and restarted. CREATE TABLE IF NOT EXISTS will not add
+  // it, so without a migration the next write fails.
+  const dir = mkdtempSync(join(tmpdir(), 'quorum-upgrade-'));
+  const path = join(dir, 'quorum.db');
+  try {
+    const before = openQuorum({ path });
+    const { participant } = before.identify({ name: 'early-adopter', harness: 'test' });
+    before.createRoom({ name: 'made-before-the-upgrade', by: participant.id });
+    before.close();
+
+    const raw = new DatabaseSync(path);
+    raw.exec('ALTER TABLE events DROP COLUMN actor_id'); // rewind to the older shape
+    raw.close();
+
+    const after = openQuorum({ path });
+    const resumed = after.identify({ name: 'early-adopter', harness: 'test' });
+    assert.equal(resumed.resumed, true, 'the old rows are still there');
+    assert.equal(after.listRooms()[0]?.name, 'made-before-the-upgrade');
+    const event = after.readEvents().at(-1);
+    assert.equal(event?.actorId, resumed.participant.id, 'and new writes carry the added column');
+    after.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('acting without identifying is refused by name', () => {

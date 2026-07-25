@@ -93,6 +93,20 @@ export function openQuorum(options: QuorumOptions = {}) {
   db.exec('PRAGMA foreign_keys = ON');
   db.exec(SCHEMA);
 
+  // CREATE TABLE IF NOT EXISTS does nothing to a table that already exists, so
+  // a column added after someone started using quorum never arrives and the
+  // next write fails with `table events has no column named …`. Additive
+  // migrations run here, on open, in order. v0 only ever adds nullable
+  // columns; anything that needs a rewrite gets a real migration story before
+  // it lands, not after someone's database refuses to start.
+  const addColumn = (table: string, column: string, declaration: string): void => {
+    const present = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(
+      (row) => row.name === column,
+    );
+    if (!present) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${declaration}`);
+  };
+  addColumn('events', 'actor_id', 'TEXT');
+
   // Everyone blocked in wait_for_events. Appending an event wakes them all;
   // each re-reads from its own cursor, so there is no per-waiter bookkeeping.
   const waiters = new Set<() => void>();
