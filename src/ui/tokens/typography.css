@@ -1,0 +1,21 @@
+/* Dense developer-tool scale: 13.5px body, mono for every machine-authored
+   value (ids, globs, harness names, seq numbers, timestamps). */
+:root{
+--fs-11:11px;--fs-12:12px;--fs-13:13.5px;--fs-15:15px;--fs-17:17px;--fs-20:20px;--fs-25:25px;--fs-32:32px;--fs-42:42px;
+--lh-tight:1.15;/* @kind font */--lh-snug:1.3;/* @kind font */--lh-body:1.55;/* @kind font */--lh-loose:1.7;/* @kind font */
+--fw-regular:400;/* @kind font */--fw-medium:500;/* @kind font */--fw-semibold:600;/* @kind font */
+--ls-tight:-0.015em;/* @kind font */--ls-normal:0;/* @kind font */--ls-caps:0.08em;/* @kind font */--ls-mono:-0.005em;/* @kind font */
+/* roles */
+--type-display:var(--fw-semibold) var(--fs-42)/var(--lh-tight) var(--font-sans);
+--type-title:var(--fw-semibold) var(--fs-25)/var(--lh-snug) var(--font-sans);
+--type-heading:var(--fw-semibold) var(--fs-17)/var(--lh-snug) var(--font-sans);
+--type-subheading:var(--fw-semibold) var(--fs-15)/var(--lh-snug) var(--font-sans);
+--type-body:var(--fw-regular) var(--fs-13)/var(--lh-body) var(--font-sans);
+--type-body-strong:var(--fw-medium) var(--fs-13)/var(--lh-body) var(--font-sans);
+--type-meta:var(--fw-regular) var(--fs-12)/var(--lh-snug) var(--font-sans);
+--type-mono:var(--fw-regular) var(--fs-12)/var(--lh-snug) var(--font-mono);
+--type-mono-strong:var(--fw-medium) var(--fs-12)/var(--lh-snug) var(--font-mono);
+--type-label:var(--fw-semibold) var(--fs-11)/1 var(--font-mono);
+--type-record-title:var(--fw-semibold) var(--fs-20)/var(--lh-snug) var(--font-serif);
+--type-record-body:var(--fw-regular) var(--fs-13)/var(--lh-loose) var(--font-serif);
+}

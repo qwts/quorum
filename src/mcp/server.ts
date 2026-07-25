@@ -10,6 +10,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { Quorum } from '../domain/quorum.ts';
+import { serveUi } from '../ui/serve.ts';
 import { PARTICIPANT_CONTRACT } from './contract.ts';
 import { callTool, TOOLS, type Session } from './tools.ts';
 
@@ -94,6 +95,11 @@ export async function startServer(options: {
       res.end(JSON.stringify({ ok: true, sessions: transports.size }));
       return;
     }
+
+    // One process, two surfaces (architecture §1): the agent endpoint and the
+    // human UI. The UI is static files with no build step, so serving it costs
+    // this much.
+    if (await serveUi(req, res, url.pathname)) return;
 
     if (url.pathname !== MCP_PATH) {
       res.writeHead(404, { 'content-type': 'application/json' });
