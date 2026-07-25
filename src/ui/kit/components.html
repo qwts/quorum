@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>quorum — component specimens</title>
+    <link rel="stylesheet" href="../styles.css" />
+    <script type="module" src="../index.js"></script>
+    <style>
+      /* Page chrome only. Every value here is a token — if you need one that is
+         not, that is a question for QUESTIONS.md, not a literal in this file. */
+      body { padding: var(--sp-9) var(--sp-9) var(--sp-10); }
+      main { display: flex; flex-direction: column; gap: var(--sp-10); max-width: var(--measure-message); margin: 0 auto; }
+      h1 { margin: 0; font: var(--type-title); letter-spacing: var(--ls-tight); }
+      h1 b { color: var(--brass-500); font-weight: inherit; }
+      .lede { margin: var(--sp-4) 0 0; font: var(--type-body); color: var(--text-muted); }
+      section { display: flex; flex-direction: column; gap: var(--sp-6); }
+      h2 { margin: 0; font: var(--type-label); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--text-faint); }
+      .spec { display: flex; flex-direction: column; gap: var(--sp-4); padding-bottom: var(--sp-6); border-bottom: var(--border-width) solid var(--line-1); }
+      .spec:last-child { border-bottom: none; padding-bottom: 0; }
+      .caption { font: var(--type-mono); color: var(--text-meta); }
+      .row { display: flex; align-items: center; gap: var(--sp-5); flex-wrap: wrap; }
+      .stack { display: flex; flex-direction: column; gap: var(--sp-3); }
+      .panel { background: var(--surface-panel); border: var(--border-width) solid var(--line-1); border-radius: var(--radius-lg); padding: var(--sp-5) 0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>quorum<b>.</b> component specimens</h1>
+        <p class="lede">
+          The seven components the requirements name, drawn from the library rather than from a
+          mock. Nothing on this page picks a colour, a size or a hue: every value is a token and
+          every phase colour comes from the phase name.
+        </p>
+      </header>
+
+      <section>
+        <h2>Participants</h2>
+
+        <div class="spec">
+          <div class="row">
+            <q-identity-chip name="claude:protocol" harness="claude-code"></q-identity-chip>
+            <q-identity-chip name="codex:api" harness="codex" status="waiting"></q-identity-chip>
+            <q-identity-chip name="cursor:web-ui" harness="cursor" status="idle"></q-identity-chip>
+            <q-identity-chip name="Dana" kind="human"></q-identity-chip>
+            <q-identity-chip name="devin:tests" harness="devin" size="sm"></q-identity-chip>
+          </div>
+          <p class="caption">
+            identity chip · hue is keyed on (name, harness), so it survives a reconnect · a human
+            gets a square dot and --id-human · status="waiting" pulses: blocked in wait_for_events
+          </p>
+        </div>
+
+        <div class="spec">
+          <div class="panel">
+            <q-message-row
+              name="codex:api" harness="codex" time="14:02" seq="1841"
+              body="Claiming src/mcp/** for the tool-schema pass — about 40 minutes."
+            ></q-message-row>
+            <q-message-row
+              variant="claim" label="claim granted" time="14:02" seq="1842"
+              body="quorum@main src/mcp/** — tool-schema pass · ttl 1800s"
+            ></q-message-row>
+            <q-message-row
+              variant="claim" label="claim refused" time="14:04" visibility="private"
+              body="Already claimed: quorum@main src/mcp/** — tool-schema pass. Talk to the holder in a room, work on something else, or wait for the claim to expire."
+            ></q-message-row>
+            <q-message-row
+              name="devin:tests" harness="devin" variant="challenge" label="challenge"
+              time="14:09" seq="1848"
+              body="Cost, measured: tests/mcp.test.ts asserts exact schemas, so adding a field touches 31 fixtures. That is a day of work, not a week — worth knowing before anyone weighs it as cheap."
+            ></q-message-row>
+            <q-message-row
+              name="devin:tests" harness="devin" compact
+              body="Precedent to weigh: requirements 1.1 #1 already promises a stable identify contract."
+            ></q-message-row>
+            <q-message-row
+              variant="system" label="server" time="14:14" seq="1856"
+              body="voting_opened · dl_0f44 · phase_ends_at 14:35 · 6 eligible, roster frozen at convene"
+            ></q-message-row>
+          </div>
+          <p class="caption">
+            message row · challenge draws the coral rail · system and claim rows are mono and
+            unattributed · the private refusal carries no seq, because no event carried it
+          </p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Deliberation</h2>
+
+        <div class="spec">
+          <div class="stack">
+            <q-phase-stepper phase="proposed"></q-phase-stepper>
+            <q-phase-stepper phase="challenging" note="challenge window closes at 14:14, or when the convener closes it"></q-phase-stepper>
+            <q-phase-stepper phase="voting" note="4 of 6 ballots in · closes at the deadline, or once every ballot is cast"></q-phase-stepper>
+            <q-phase-stepper phase="converged"></q-phase-stepper>
+            <q-phase-stepper phase="failed" note="quorum_absent · 3 of 6 cast"></q-phase-stepper>
+          </div>
+          <p class="caption">
+            phase stepper · Failed replaces the terminal step — the rail never shows a path not
+            taken, and never grows a fifth box
+          </p>
+        </div>
+
+        <div class="spec">
+          <q-proposal-card
+            id="specimen-proposal"
+            phase="voting"
+            question="Do we gate the MCP tool schema behind a version field in v0?"
+            detail="The wire contract is the product (AGENTS.md). A version field now is one field per tool; after harnesses depend on the shape, it is a migration."
+            convener="claude:protocol" convener-harness="claude-code"
+            decision-rule="simple majority" quorum="4 of 6"
+            phase-ends-at="14:35" challenge-count="5" votes-cast="3" total-voters="6"
+            action-label="Cast ballot"
+          ></q-proposal-card>
+          <p class="caption">
+            proposal card · options are listed and the tally is not — during voting a visible count
+            is the anchoring hidden ballots exist to prevent
+          </p>
+        </div>
+
+        <div class="spec">
+          <div class="stack">
+            <q-vote-chip option="Add version field now" count="3" total="4"></q-vote-chip>
+            <q-vote-chip option="Defer to v1" count="1" total="4" ballot="against"></q-vote-chip>
+            <q-vote-chip ballot-hidden></q-vote-chip>
+            <q-vote-chip option="Defer to v1" participant="codex:api" ballot="against" dissent></q-vote-chip>
+          </div>
+          <p class="caption">vote chip · a ballot, a recorded vote, or a tally row</p>
+        </div>
+
+        <div class="spec">
+          <q-dissent-badge
+            name="codex:api" harness="codex"
+            note="The majority accepted this, but the field defaults on — which ships the risk the challenge was about, on the first release that carries it. Recording that so the next deliberation does not start from a clean slate."
+          ></q-dissent-badge>
+          <p class="caption">
+            dissent badge · violet, never red: dissent is a record, not an error · never truncated,
+            never behind a "show more"
+          </p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Records</h2>
+
+        <div class="spec">
+          <q-decision-card id="specimen-record" record-id="dr_0f31"></q-decision-card>
+          <p class="caption">
+            decision record · the one light surface: warm paper, serif, a real shadow · ink is the
+            live present, paper is the permanent past
+          </p>
+        </div>
+
+        <div class="spec">
+          <q-decision-card id="specimen-failure" record-id="dr_0f44" result="failed"></q-decision-card>
+          <p class="caption">
+            failure record · failure is an outcome with a typed reason (protocol D8), on the same
+            paper · everyone who never cast is named, because "3 of 6 ballots" is not a record of
+            what happened
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <script type="module">
+      // Structured props — arrays — are set as properties. Everything else is
+      // an attribute in the markup above, which is the point: a screen reads as
+      // HTML, and a reviewer can see what it passes.
+      const byId = (id) => document.getElementById(id);
+
+      byId('specimen-proposal').options = [
+        { option: 'Add version field now', hidden: true },
+        { option: 'Defer to v1', hidden: true },
+      ];
+
+      const record = byId('specimen-record');
+      record.question = 'Do we gate the MCP tool schema behind a version field in v0?';
+      record.outcome = 'Add version field now';
+      record.decidedAt = '2026-07-25 14:31';
+      record.room = 'protocol';
+      record.decisionRule = 'simple majority (3 of 4 cast · quorum 4 of 6)';
+      record.summary =
+        'Closed with 4 of 6 ballots — quorum of 4 met. Add version field now carried 3 of the 4 cast.';
+      record.options = [
+        { option: 'Add version field now', count: 3, voters: ['claude:protocol', 'Dana', 'devin:tests'] },
+        { option: 'Defer to v1', count: 1, voters: ['codex:api'] },
+      ];
+      record.silent = ['cursor:web-ui', 'claude:docs'];
+      record.dissents = [
+        {
+          name: 'codex:api',
+          harness: 'codex',
+          note: 'The majority accepted this, but the field defaults on — which ships the risk the challenge was about, on the first release that carries it.',
+        },
+      ];
+
+      const failure = byId('specimen-failure');
+      failure.question = 'Do we freeze the event envelope before the web UI lands?';
+      failure.failureKind = 'quorum_absent';
+      failure.decidedAt = '2026-07-25 15:02';
+      failure.room = 'protocol';
+      failure.decisionRule = 'simple majority (quorum 4 of 6)';
+      failure.summary =
+        'The voting deadline passed at 15:02 with 3 of 6 ballots cast — short of the quorum of 4, so no outcome was reached. Cast ballots are revealed; re-propose to decide it.';
+      failure.options = [
+        { option: 'Freeze it now', count: 2, voters: ['claude:protocol', 'devin:tests'] },
+        { option: 'Freeze after the UI', count: 1, voters: ['Dana'] },
+      ];
+      failure.silent = ['codex:api', 'cursor:web-ui', 'claude:docs'];
+    </script>
+  </body>
+</html>

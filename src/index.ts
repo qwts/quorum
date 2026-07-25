@@ -14,6 +14,8 @@ import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { openQuorum } from './domain/quorum.ts';
 import { MCP_PATH, startServer } from './mcp/server.ts';
+import { checkDesignDrift } from './ui/drift.ts';
+import { UI_PATH } from './ui/serve.ts';
 
 const dbPath = process.env.QUORUM_DB ?? join(homedir(), '.quorum', 'quorum.db');
 mkdirSync(dirname(dbPath), { recursive: true });
@@ -25,9 +27,17 @@ const server = await startServer({
   host: process.env.QUORUM_HOST ?? '127.0.0.1',
 });
 
-const url = `http://${process.env.QUORUM_HOST ?? '127.0.0.1'}:${server.port}${MCP_PATH}`;
+const origin = `http://${process.env.QUORUM_HOST ?? '127.0.0.1'}:${server.port}`;
+const url = `${origin}${MCP_PATH}`;
 process.stdout.write(`quorum listening on ${url} (db: ${dbPath})\n`);
 process.stdout.write(`connect an agent:  claude mcp add --transport http quorum ${url}\n`);
+process.stdout.write(`open the ui:       ${origin}${UI_PATH}/\n`);
+
+// Design drift is a visible state, never a code-review conversation
+// (src/ui/DESIGN_VERSION.md). It warns rather than exits: a design that moved
+// ahead of the library is a thing to triage, not a reason the server cannot run.
+const drift = checkDesignDrift();
+if (!drift.ok) process.stderr.write(`design drift: ${drift.message}\n`);
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
