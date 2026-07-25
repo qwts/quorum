@@ -236,12 +236,19 @@ export function openQuorum(options: QuorumOptions = {}) {
     return row.n;
   }
 
-  // Consumption-advanced: the cursor moves when events are handed over, never
-  // when the participant causes one. Monotonic, so an out-of-order or replayed
-  // call cannot drag a participant backwards into re-reading.
-  function advanceCursor(participantId: string | null, to: number): void {
+  // Acknowledgement-advanced, not send-advanced. Recording what we *sent*
+  // loses events whenever a response dies in flight: the connection drops
+  // after the read, the durable cursor says delivered, and the reconnect
+  // skips exactly what never arrived — the failure a durable cursor exists to
+  // prevent. So the cursor advances to the `after_seq` a participant brings
+  // on its next call, which is proof the previous batch reached it. The cost
+  // is that a crash mid-batch replays it, and replay is the side to err on.
+  //
+  // Monotonic, so a stale or replayed call cannot drag a participant backwards
+  // into re-reading what it has already acknowledged.
+  function acknowledgeCursor(participantId: string | null, upTo: number): void {
     if (participantId === null) return; // an unidentified observer owns no cursor
-    db.prepare('UPDATE participants SET cursor = ? WHERE id = ? AND cursor < ?').run(to, participantId, to);
+    db.prepare('UPDATE participants SET cursor = ? WHERE id = ? AND cursor < ?').run(upTo, participantId, upTo);
   }
 
   function ttlToExpiry(ttlSeconds: number | undefined): number {
@@ -557,8 +564,9 @@ export function openQuorum(options: QuorumOptions = {}) {
       return latestSeq();
     },
 
-    // What a participant has consumed, and how much waits past it.
+    // What a participant has acknowledged, and how much waits past it.
     cursorFor(participantId: string): { cursor: number; unseen: number } {
+      requireParticipant(participantId); // unknown ids are caller bugs, not empty results
       const cursor = storedCursor(participantId);
       return { cursor, unseen: unseenCount(cursor) };
     },
@@ -574,14 +582,14 @@ export function openQuorum(options: QuorumOptions = {}) {
     }): Promise<QuorumEvent[]> {
       const timeoutMs = Math.min(Math.max(input.timeoutMs ?? 25_000, 0), 120_000);
       const deadline = Date.now() + timeoutMs;
+      // Coming back for events after N is the acknowledgement that everything
+      // through N arrived.
+      acknowledgeCursor(input.participantId ?? null, input.afterSeq);
 
       for (;;) {
         sweepExpired();
         const events = readEventsAfter(input.afterSeq, 100);
-        if (events.length > 0) {
-          advanceCursor(input.participantId ?? null, events[events.length - 1]!.seq);
-          return events;
-        }
+        if (events.length > 0) return events; // recorded when the caller comes back for more
 
         const remaining = deadline - Date.now();
         if (remaining <= 0) return [];

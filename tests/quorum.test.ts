@@ -311,13 +311,20 @@ test('a cursor outlives the connection that made it', async () => {
 
     first.createRoom({ name: 'platform', by: ada.participant.id });
     first.joinRoom({ room: 'platform', participantId: grace.participant.id });
-    // Ada consumes up to here; that is the only thing that moves her cursor.
+
+    // Ada reads a batch. Nothing durable moves yet — a batch that was sent is
+    // not a batch that arrived.
     const consumed = await first.waitForEvents({
       afterSeq: ada.cursor,
       timeoutMs: 0,
       participantId: ada.participant.id,
     });
     const stopped = consumed.at(-1)!.seq;
+    assert.equal(first.cursorFor(ada.participant.id).cursor, ada.cursor, 'sending is not delivering');
+
+    // Coming back for what follows is the acknowledgement that it did arrive.
+    await first.waitForEvents({ afterSeq: stopped, timeoutMs: 0, participantId: ada.participant.id });
+    assert.equal(first.cursorFor(ada.participant.id).cursor, stopped);
 
     // Ada posts (does not advance her), then Grace says something Ada never reads.
     first.postMessage({ room: 'platform', participantId: ada.participant.id, body: 'heading out' });
@@ -343,6 +350,53 @@ test('a cursor outlives the connection that made it', async () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('a batch that never arrived is not recorded as delivered', async () => {
+  // The dropped response: the server reads the rows, the connection dies before
+  // the reply lands, and the agent reconnects. If the cursor advanced on send,
+  // those events are gone forever — the exact skip a durable cursor exists to
+  // prevent.
+  const dir = mkdtempSync(join(tmpdir(), 'quorum-ack-'));
+  const path = join(dir, 'quorum.db');
+  try {
+    const first = openQuorum({ path });
+    const ada = first.identify({ name: 'ada', harness: 'test' });
+    const grace = first.identify({ name: 'grace', harness: 'test' });
+    first.createRoom({ name: 'platform', by: grace.participant.id });
+    first.postMessage({ room: 'platform', participantId: grace.participant.id, body: 'lost in flight' });
+
+    const sent = await first.waitForEvents({
+      afterSeq: ada.cursor,
+      timeoutMs: 0,
+      participantId: ada.participant.id,
+    });
+    assert.ok(sent.length > 0, 'the server did read a batch');
+    first.close(); // the reply never reached Ada
+
+    const second = openQuorum({ path });
+    const back = second.identify({ name: 'ada', harness: 'test' });
+    assert.equal(back.cursor, ada.cursor, 'the undelivered batch is still ahead of her');
+    assert.equal(back.unseen, sent.length);
+    const replayed = await second.waitForEvents({
+      afterSeq: back.cursor,
+      timeoutMs: 0,
+      participantId: back.participant.id,
+    });
+    const bodies = replayed
+      .map((event) => (event.payload as { message?: { body: string } }).message?.body)
+      .filter(Boolean);
+    assert.ok(bodies.includes('lost in flight'), 'replayed rather than skipped');
+    second.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an unknown participant is a caller bug, not an empty cursor', () => {
+  const quorum = openQuorum();
+  assert.throws(() => quorum.cursorFor('nobody'), /unknown participant/);
+  quorum.close();
 });
 
 test('an unidentified observer consumes without owning a cursor', async () => {

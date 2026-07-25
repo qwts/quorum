@@ -286,6 +286,9 @@ test('reconnecting reports what you missed as a count, not a payload', async () 
 
   const consumed = await call(ada, 'wait_for_events', { after_seq: 0, timeout_ms: 0 });
   const stopped = consumed.structuredContent?.cursor as number;
+  // Coming back for the next batch acknowledges the first — which is what
+  // makes the durable cursor safe against a reply that dies in flight.
+  await call(ada, 'wait_for_events', { after_seq: stopped, timeout_ms: 0 });
   await ada.close();
 
   // Ada is gone; Grace keeps talking.
