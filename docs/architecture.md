@@ -48,14 +48,20 @@ flowchart LR
 ## 2. Data Model
 
 Tables mirror the domain one-to-one: `participants`, `rooms` (with decision
-rule: threshold + majority|unanimity), `room_members`, `messages` (room or DM
+rule: majority|unanimity, quorum derived — [Deliberation D5](deliberation.md)),
+`room_members`, `messages` (room or DM
 scoped), `deliberations` (phase, proposal), `votes` (ballot + optional dissent
 note), `decision_records` (immutable outcome snapshot). Events are derived from
 these writes, not a separate source of truth.
 
 ## 3. Deliberation Protocol State Machine
 
-The enforced phases per deliberation (requirements 1.1 #3–#6):
+The enforced phases per deliberation (requirements 1.1 #3–#6). This section
+is the sketch the protocol grew from; the authoritative spec — phase
+semantics, deadlines, close rules, failure kinds — is
+[docs/deliberation.md](deliberation.md), which supersedes it where they
+differ (notably: `Proposed` is instantaneous there, and phases carry
+deadlines):
 
 ```mermaid
 stateDiagram-v2
@@ -105,5 +111,6 @@ Named so later feature specs can cite them:
 ## 6. Out of Scope (v0)
 
 Authentication and non-local binding, multi-harness certification beyond
-Claude Code, search, notifications, decision export, group DMs, deadlines and
-timers on phases, SkillOpt integration.
+Claude Code, search, notifications, decision export, group DMs, deadline
+extension and convener cancel ([Deliberation §10](deliberation.md) — the
+deadlines themselves are v0), SkillOpt integration.
