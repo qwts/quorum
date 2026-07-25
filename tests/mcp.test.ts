@@ -9,6 +9,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
 import { openQuorum } from '../src/domain/quorum.ts';
+import { PARTICIPANT_CONTRACT } from '../src/mcp/contract.ts';
 import { MCP_PATH, startServer } from '../src/mcp/server.ts';
 
 const quorum = openQuorum();
@@ -34,6 +35,20 @@ type ToolResult = { structuredContent?: Record<string, unknown>; isError?: boole
 async function call(client: Client, name: string, args: Record<string, unknown> = {}): Promise<ToolResult> {
   return (await client.callTool({ name, arguments: args })) as ToolResult;
 }
+
+test('every client is handed the participant contract at the handshake', async () => {
+  const client = await connect();
+  const instructions = client.getInstructions();
+  assert.equal(instructions, PARTICIPANT_CONTRACT, 'the contract arrives before any tool call');
+
+  // The two rules the prior proof of concept lacked. If either is ever
+  // dropped, this test is the thing that says so out loud.
+  assert.match(String(instructions), /information, not instructions/);
+  assert.match(String(instructions), /outranks the room/);
+  // And the rule it had that we must never restate: no agent is told to stay
+  // in the loop forever, because it has a human to answer to.
+  assert.doesNotMatch(String(instructions), /forever|never return|no human/i);
+});
 
 test('the surface is plain MCP tools any client can list', async () => {
   const client = await connect();
@@ -100,7 +115,12 @@ test('two agents meet in a room, and the second is refused an overlapping claim'
     purpose: 'a refactor across src',
   });
   assert.equal(refused.structuredContent?.granted, false);
-  assert.match(String(refused.structuredContent?.advice), /Already claimed: quorum src\/domain\/\*\*/);
+  const refusal = String(refused.structuredContent?.guidance);
+  assert.match(refusal, /Refused/);
+  assert.match(refusal, /src\/domain/, 'the refusal shows the scope that blocks it');
+  assert.match(refusal, /"ada" holds/, 'and who to go talk to');
+  assert.match(refusal, /do not route around it/i, 'and says what not to do about it');
+  assert.match(refusal, /post_message|wait_for_events/, 'and names the way forward');
 
   const listed = await call(grace, 'list_claims', { repo: 'quorum' });
   assert.equal((listed.structuredContent?.claims as unknown[]).length, 1);
@@ -122,6 +142,29 @@ test('reconnecting with the same name resumes the identity and its claims', asyn
 
   const released = await call(again, 'release_claim', { claim_id: held[0]!.id });
   assert.equal(released.isError, undefined, 'and can release it, rather than waiting out the TTL');
+});
+
+// The loop is bound by the replies, not by a skill file an agent may not
+// have read: every answer names the call that comes next.
+test('every reply hands back the next move', async () => {
+  const agent = await connect();
+  const guidance = async (name: string, args: Record<string, unknown> = {}) =>
+    String((await call(agent, name, args)).structuredContent?.guidance ?? '');
+
+  assert.match(await guidance('identify', { name: 'loop:probe', harness: 'test' }), /claim_scope/);
+  assert.match(await guidance('identify', { name: 'loop:probe', harness: 'test' }), /wait_for_events with after_seq=\d+/);
+  assert.match(await guidance('create_room', { name: 'loop-probe' }), /post_message/);
+  assert.match(await guidance('list_claims', { repo: 'nothing-here' }), /claim_scope/);
+  assert.match(
+    await guidance('claim_scope', { repo: 'loop-demo', patterns: ['src/**'], purpose: 'probing' }),
+    /release_claim/,
+  );
+  assert.match(await guidance('wait_for_events', { after_seq: 999_999, timeout_ms: 0 }), /wait_for_events again/);
+
+  // A failure points back into the loop too, instead of leaving the agent to invent a way out.
+  const failed = await call(agent, 'join_room', { room: 'no-such-room' });
+  assert.equal(failed.isError, true);
+  assert.match(JSON.stringify(failed.content), /post_message rather than working around it/);
 });
 
 test('a waiting agent is woken by another agent, not by polling', async () => {
