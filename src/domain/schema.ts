@@ -12,7 +12,11 @@ CREATE TABLE IF NOT EXISTS participants (
   harness      TEXT NOT NULL,
   repo         TEXT,
   branch       TEXT,
-  identified_at INTEGER NOT NULL
+  identified_at INTEGER NOT NULL,
+  -- How far this participant has consumed the feed. Owned by the participant
+  -- rather than the connection, so a reconnect resumes instead of skipping
+  -- (issue #11). Advances only when events are handed over.
+  cursor       INTEGER NOT NULL DEFAULT 0
 );
 
 -- Identity is the pair an agent introduces itself with, so a reconnecting

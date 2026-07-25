@@ -106,6 +106,7 @@ export function openQuorum(options: QuorumOptions = {}) {
     if (!present) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${declaration}`);
   };
   addColumn('events', 'actor_id', 'TEXT');
+  addColumn('participants', 'cursor', 'INTEGER NOT NULL DEFAULT 0');
 
   // Everyone blocked in wait_for_events. Appending an event wakes them all;
   // each re-reads from its own cursor, so there is no per-waiter bookkeeping.
@@ -218,6 +219,31 @@ export function openQuorum(options: QuorumOptions = {}) {
     }));
   }
 
+  function latestSeq(): number {
+    const row = db.prepare('SELECT MAX(seq) AS seq FROM events').get() as { seq: number | null } | undefined;
+    return row?.seq ?? 0;
+  }
+
+  function storedCursor(participantId: string): number {
+    const row = db.prepare('SELECT cursor FROM participants WHERE id = ?').get(participantId) as
+      | { cursor: number }
+      | undefined;
+    return row?.cursor ?? 0;
+  }
+
+  function unseenCount(cursor: number): number {
+    const row = db.prepare('SELECT COUNT(*) AS n FROM events WHERE seq > ?').get(cursor) as { n: number };
+    return row.n;
+  }
+
+  // Consumption-advanced: the cursor moves when events are handed over, never
+  // when the participant causes one. Monotonic, so an out-of-order or replayed
+  // call cannot drag a participant backwards into re-reading.
+  function advanceCursor(participantId: string | null, to: number): void {
+    if (participantId === null) return; // an unidentified observer owns no cursor
+    db.prepare('UPDATE participants SET cursor = ? WHERE id = ? AND cursor < ?').run(to, participantId, to);
+  }
+
   function ttlToExpiry(ttlSeconds: number | undefined): number {
     const ttl = ttlSeconds ?? DEFAULT_TTL_SECONDS;
     if (!Number.isFinite(ttl) || ttl <= 0) throw new QuorumError('ttl_seconds must be a positive number');
@@ -241,6 +267,8 @@ export function openQuorum(options: QuorumOptions = {}) {
       participant: Participant;
       resumed: boolean;
       claims: Claim[];
+      cursor: number;
+      unseen: number;
     } {
       const name = input.name?.trim();
       const harness = input.harness?.trim();
@@ -263,16 +291,31 @@ export function openQuorum(options: QuorumOptions = {}) {
         );
         const participant = requireParticipant(existing.id);
         const held = liveClaims().filter((claim) => claim.participantId === participant.id);
+        // The cursor is read *before* this identify's own event is appended,
+        // so an agent is never told it missed its own reconnection.
+        const cursor = storedCursor(participant.id);
+        const unseen = unseenCount(cursor);
         appendEvent('participant_identified', null, { participant, resumed: true }, participant.id);
-        return { participant, resumed: true, claims: held };
+        return { participant, resumed: true, claims: held, cursor, unseen };
       }
 
+      // A newcomer starts at the head: arriving is not the same as having
+      // missed everything that ever happened.
+      const head = latestSeq();
       const participant: Participant = { id: randomUUID(), name, harness, repo, branch };
       db.prepare(
-        'INSERT INTO participants (id, name, harness, repo, branch, identified_at) VALUES (?, ?, ?, ?, ?, ?)',
-      ).run(participant.id, participant.name, participant.harness, participant.repo, participant.branch, now());
+        'INSERT INTO participants (id, name, harness, repo, branch, identified_at, cursor) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      ).run(
+        participant.id,
+        participant.name,
+        participant.harness,
+        participant.repo,
+        participant.branch,
+        now(),
+        head,
+      );
       appendEvent('participant_identified', null, { participant, resumed: false }, participant.id);
-      return { participant, resumed: false, claims: [] };
+      return { participant, resumed: false, claims: [], cursor: head, unseen: 0 };
     },
 
     listParticipants(): Participant[] {
@@ -511,22 +554,34 @@ export function openQuorum(options: QuorumOptions = {}) {
     },
 
     latestSeq(): number {
-      const row = db.prepare('SELECT MAX(seq) AS seq FROM events').get() as { seq: number | null } | undefined;
-      return row?.seq ?? 0;
+      return latestSeq();
+    },
+
+    // What a participant has consumed, and how much waits past it.
+    cursorFor(participantId: string): { cursor: number; unseen: number } {
+      const cursor = storedCursor(participantId);
+      return { cursor, unseen: unseenCount(cursor) };
     },
 
     // Cursor long-poll: block until events pass the caller's cursor. The wake
     // deadline is the earlier of the caller's timeout and the next lease
     // expiry, so an agent waiting for a scope to free up is woken by the
     // expiry itself without any background timer existing.
-    async waitForEvents(input: { afterSeq: number; timeoutMs?: number }): Promise<QuorumEvent[]> {
+    async waitForEvents(input: {
+      afterSeq: number;
+      timeoutMs?: number;
+      participantId?: string | null;
+    }): Promise<QuorumEvent[]> {
       const timeoutMs = Math.min(Math.max(input.timeoutMs ?? 25_000, 0), 120_000);
       const deadline = Date.now() + timeoutMs;
 
       for (;;) {
         sweepExpired();
         const events = readEventsAfter(input.afterSeq, 100);
-        if (events.length > 0) return events;
+        if (events.length > 0) {
+          advanceCursor(input.participantId ?? null, events[events.length - 1]!.seq);
+          return events;
+        }
 
         const remaining = deadline - Date.now();
         if (remaining <= 0) return [];

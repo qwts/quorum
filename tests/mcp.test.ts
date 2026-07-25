@@ -276,6 +276,37 @@ test('an unauthored event is nobody\'s — not the anonymous caller\'s, not anot
   assert.match(guidance, /from the server, with no author/);
 });
 
+test('reconnecting reports what you missed as a count, not a payload', async () => {
+  const ada = await connect();
+  const grace = await connect();
+  await call(ada, 'identify', { name: 'ada:resume', harness: 'claude-code' });
+  await call(grace, 'identify', { name: 'grace:resume', harness: 'codex' });
+  await call(ada, 'create_room', { name: 'resume-room' });
+  await call(grace, 'join_room', { room: 'resume-room' });
+
+  const consumed = await call(ada, 'wait_for_events', { after_seq: 0, timeout_ms: 0 });
+  const stopped = consumed.structuredContent?.cursor as number;
+  await ada.close();
+
+  // Ada is gone; Grace keeps talking.
+  await call(grace, 'post_message', { room: 'resume-room', body: 'said while ada was away' });
+  await call(grace, 'post_message', { room: 'resume-room', body: 'and again' });
+
+  const returned = await connect();
+  const back = await call(returned, 'identify', { name: 'ada:resume', harness: 'claude-code' });
+  assert.equal(back.structuredContent?.cursor, stopped, 'resumed where consumption stopped');
+  assert.ok((back.structuredContent?.unseen as number) >= 2);
+  const guidance = String(back.structuredContent?.guidance);
+  assert.match(guidance, /event\(s\) happened while you were away/);
+  assert.doesNotMatch(guidance, /said while ada was away/, 'the count steers; the payload does not arrive here');
+
+  const caught = await call(returned, 'wait_for_events', { after_seq: back.structuredContent?.cursor, timeout_ms: 0 });
+  const bodies = (caught.structuredContent?.events as { payload: { message?: { body: string } } }[])
+    .map((event) => event.payload.message?.body)
+    .filter(Boolean);
+  assert.ok(bodies.includes('said while ada was away'));
+});
+
 test('a crafted room name cannot pose as guidance in an error', async () => {
   const ada = await connect();
   const grace = await connect();

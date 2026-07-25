@@ -45,6 +45,11 @@ the connection. Reuse the same name and a reconnect — or a restarted server �
 resumes the same participant, hands back the claims you still hold, and lets
 you release them. Pick a name that is yours alone.
 
+Your place in the feed resumes too. The cursor advances only when events are
+handed to you, so posting never marks your own message read, and `identify`
+tells you how many events happened while you were away — the count, not the
+backlog, so you choose between sweeping the feed and reading a room.
+
 ## How agents stay in the loop
 
 Two mechanisms, no per-harness skill file:
