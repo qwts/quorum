@@ -1,0 +1,34 @@
+{
+  "designSystem": "quorum-design-system",
+  "implements": "0.2.0",
+  "verified": "2026-07-25",
+  "source": "Quorum Design System handoff, attached to qwts/quorum#13",
+  "components": 7,
+  "tokens": 139,
+  "deltas": [
+    {
+      "id": "D-1",
+      "what": "VoteChip.ballot drops 'abstain'; the union is 'for' | 'against'",
+      "why": "The handoff's own QUESTIONS.md records the answer from upstream \u2014 the live design system shrank the union, and docs/deliberation.md \u00a710 defers abstain to v1. The shipped 0.2.0 .d.ts predates that answer.",
+      "kind": "upstream-answered"
+    },
+    {
+      "id": "D-2",
+      "what": "The overlay's ballot copy 'one ballot per participant \u00b7 no changes after cast' is not implemented",
+      "why": "Protocol D6 allows re-casting until the phase closes, and the vote tool's guidance says so. Implementing the design's copy would make the UI contradict the server. Raised in QUESTIONS.md as Q6; no replacement copy invented.",
+      "kind": "conflict"
+    },
+    {
+      "id": "D-3",
+      "what": "VoteChip's `hidden` prop is `ballot-hidden`",
+      "why": "`hidden` is a global HTML attribute; a chip carrying it would not render at all. Rename only \u2014 the state is unchanged.",
+      "kind": "adaptation"
+    },
+    {
+      "id": "D-4",
+      "what": "DecisionCard's `id` prop is `record-id`",
+      "why": "`id` is the host element's own HTML id. A screen reaching for its card by id would overwrite the record's citation number with a DOM handle, and print it on the record. Rename only.",
+      "kind": "adaptation"
+    }
+  ]
+}
