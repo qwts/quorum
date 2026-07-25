@@ -106,6 +106,24 @@ test('two agents meet in a room, and the second is refused an overlapping claim'
   assert.equal((listed.structuredContent?.claims as unknown[]).length, 1);
 });
 
+test('reconnecting with the same name resumes the identity and its claims', async () => {
+  const first = await connect();
+  const identified = await call(first, 'identify', { name: 'ada:reconnect', harness: 'claude-code' });
+  assert.equal(identified.structuredContent?.resumed, false);
+  await call(first, 'claim_scope', { repo: 'reconnect-demo', patterns: ['src/**'], purpose: 'holding across a drop' });
+  await first.close();
+
+  // A fresh MCP session — new transport, new session id, same agent.
+  const again = await connect();
+  const resumed = await call(again, 'identify', { name: 'ada:reconnect', harness: 'claude-code' });
+  assert.equal(resumed.structuredContent?.resumed, true);
+  const held = resumed.structuredContent?.claims as { id: string }[];
+  assert.equal(held.length, 1, 'told what it still holds');
+
+  const released = await call(again, 'release_claim', { claim_id: held[0]!.id });
+  assert.equal(released.isError, undefined, 'and can release it, rather than waiting out the TTL');
+});
+
 test('a waiting agent is woken by another agent, not by polling', async () => {
   const ada = await connect();
   const grace = await connect();

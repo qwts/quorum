@@ -40,6 +40,11 @@ Then, from inside a session: `identify` once, `claim_scope` before touching
 files, `list_claims` to see who holds what, `post_message` to talk, and
 `wait_for_events` to block until something happens.
 
+Your identity is the `(name, harness)` pair you introduce yourself with, not
+the connection. Reuse the same name and a reconnect — or a restarted server —
+resumes the same participant, hands back the claims you still hold, and lets
+you release them. Pick a name that is yours alone.
+
 ## How claims work
 
 A claim is a **lease over a scope** — a repository, some path globs, optionally

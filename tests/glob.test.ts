@@ -40,6 +40,24 @@ test('scopes overlap when any pair of their patterns does', () => {
   assert.equal(scopesOverlap(['docs/**'], ['src/**', 'tests/**']), false);
 });
 
+test('many double stars stay fast — the walk memoizes instead of exploding', () => {
+  // Without memoization these two answer in exponential time in the number of
+  // `**` segments; a claim is granted on the server's only thread, so a slow
+  // answer here is an outage for every session.
+  const left = `${'**/a/'.repeat(24)}left.ts`;
+  const right = `${'**/a/'.repeat(24)}right.ts`;
+  const started = process.hrtime.bigint();
+  assert.equal(globsOverlap(left, right), false);
+  assert.equal(globsOverlap(left, left), true);
+  const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+  assert.ok(elapsedMs < 250, `overlap took ${elapsedMs.toFixed(1)}ms`);
+});
+
+test('a scope may not be unbounded', () => {
+  assert.throws(() => normalizePatterns(Array.from({ length: 33 }, () => 'src/**')), /at most 32 patterns/);
+  assert.throws(() => normalizePatterns(['a'.repeat(257)]), /longer than 256 characters/);
+});
+
 test('claiming nothing in particular claims the whole repository', () => {
   assert.deepEqual(normalizePatterns(undefined), ['**']);
   assert.deepEqual(normalizePatterns([]), ['**']);

@@ -17,7 +17,7 @@ function withClock(start = 1_700_000_000_000) {
 }
 
 function agent(quorum: ReturnType<typeof openQuorum>, name: string) {
-  return quorum.identify({ name, harness: 'test' });
+  return quorum.identify({ name, harness: 'test' }).participant;
 }
 
 test('rooms carry their decision rule and messages read forward from a cursor', () => {
@@ -209,7 +209,7 @@ test('rooms, messages, and live claims survive a restart', () => {
   const path = join(dir, 'quorum.db');
   try {
     const first = openQuorum({ path });
-    const ada = first.identify({ name: 'ada', harness: 'test' });
+    const { participant: ada } = first.identify({ name: 'ada', harness: 'test' });
     first.createRoom({ name: 'platform', by: ada.id });
     first.postMessage({ room: 'platform', participantId: ada.id, body: 'persisted' });
     first.claimScope({ participantId: ada.id, repo: 'quorum', patterns: ['src/**'], purpose: 'held across restart' });
@@ -224,6 +224,74 @@ test('rooms, messages, and live claims survive a restart', () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('a reconnecting agent resumes its identity and keeps its claims', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'quorum-resume-'));
+  const path = join(dir, 'quorum.db');
+  try {
+    const first = openQuorum({ path });
+    const before = first.identify({ name: 'ada', harness: 'claude-code', branch: 'claude/one' });
+    assert.equal(before.resumed, false);
+    const granted = first.claimScope({
+      participantId: before.participant.id,
+      repo: 'quorum',
+      patterns: ['src/**'],
+      purpose: 'work in progress',
+    });
+    const claimId = granted.ok ? granted.claim.id : '';
+    first.close();
+
+    // Same agent, new connection, new process — the claim is still its own.
+    const second = openQuorum({ path });
+    const after = second.identify({ name: 'ada', harness: 'claude-code', branch: 'claude/two' });
+    assert.equal(after.resumed, true);
+    assert.equal(after.participant.id, before.participant.id, 'identity is (name, harness), not a fresh uuid');
+    assert.equal(after.participant.branch, 'claude/two', 'where it works may change; who it is does not');
+    assert.deepEqual(
+      after.claims.map((claim) => claim.id),
+      [claimId],
+      'a resumed agent is handed back what it still holds',
+    );
+    second.releaseClaim({ claimId, participantId: after.participant.id });
+    assert.deepEqual(second.listClaims(), [], 'and can release it — no stranding behind the TTL');
+
+    const other = second.identify({ name: 'ada', harness: 'codex' });
+    assert.notEqual(other.participant.id, before.participant.id, 'same name in another harness is another agent');
+    second.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('releasing twice closes once and announces once', () => {
+  const quorum = openQuorum();
+  const ada = agent(quorum, 'ada');
+  const granted = quorum.claimScope({
+    participantId: ada.id,
+    repo: 'quorum',
+    patterns: ['src/**'],
+    purpose: 'retried release',
+  });
+  const claimId = granted.ok ? granted.claim.id : '';
+
+  quorum.releaseClaim({ claimId, participantId: ada.id });
+  quorum.releaseClaim({ claimId, participantId: ada.id }); // the retry after a lost response
+
+  const released = quorum.readEvents().filter((event) => event.kind === 'claim_released');
+  assert.equal(released.length, 1, 'a lease closes once, so the feed says so once');
+  quorum.close();
+});
+
+test('a claim cannot carry an unbounded scope', () => {
+  const quorum = openQuorum();
+  const ada = agent(quorum, 'ada');
+  const claim = (patterns: string[]) =>
+    quorum.claimScope({ participantId: ada.id, repo: 'quorum', patterns, purpose: 'bounds' });
+
+  assert.throws(() => claim(Array.from({ length: 33 }, (_, index) => `src/${index}/**`)), /at most 32 patterns/);
+  assert.throws(() => claim([`src/${'a'.repeat(300)}.ts`]), /longer than 256 characters/);
+  quorum.close();
 });
 
 test('acting without identifying is refused by name', () => {

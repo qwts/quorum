@@ -25,7 +25,11 @@ const IDENTIFY: ToolDefinition = {
   inputSchema: {
     type: 'object',
     properties: {
-      name: { type: 'string', description: 'Display name other participants see, e.g. "claude:auth-refactor".' },
+      name: {
+        type: 'string',
+        description:
+          'Display name other participants see, e.g. "claude:auth-refactor". Reuse the same name to resume your identity — and your claims — after a reconnect or a server restart.',
+      },
       harness: { type: 'string', description: 'The tool you run in, e.g. "claude-code", "codex", "cursor".' },
       repo: { type: 'string', description: 'Repository you are working in, if any.' },
       branch: { type: 'string', description: 'Branch you are working on, if any.' },
@@ -122,7 +126,8 @@ const CLAIM_SCOPE: ToolDefinition = {
       repo: { type: 'string', description: 'Repository name the claim applies to.' },
       patterns: {
         type: 'array',
-        items: { type: 'string' },
+        items: { type: 'string', maxLength: 256 },
+        maxItems: 32,
         description: 'Path globs (`*`, `?`, `**`). Omit to claim the whole repository.',
       },
       branch: {
@@ -222,14 +227,22 @@ export async function callTool(
 ): Promise<Json> {
   switch (name) {
     case 'identify': {
-      const participant = quorum.identify({
+      const { participant, resumed, claims } = quorum.identify({
         name: str(args, 'name') ?? '',
         harness: str(args, 'harness') ?? '',
         repo: str(args, 'repo'),
         branch: str(args, 'branch'),
       });
       session.participantId = participant.id;
-      return { participant, cursor: quorum.latestSeq() };
+      return {
+        participant,
+        resumed,
+        // A resumed agent gets its live claims straight back, so it knows what
+        // it still holds after a reconnect rather than discovering it by
+        // being refused its own scope.
+        claims,
+        cursor: quorum.latestSeq(),
+      };
     }
 
     case 'list_participants':

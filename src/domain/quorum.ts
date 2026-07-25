@@ -7,7 +7,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { SCHEMA } from './schema.ts';
-import { normalizePatterns, scopesOverlap } from './glob.ts';
+import { normalizePatterns, PatternError, scopesOverlap } from './glob.ts';
 
 export type DecisionRule = 'majority' | 'unanimity';
 
@@ -203,23 +203,47 @@ export function openQuorum(options: QuorumOptions = {}) {
       db.close();
     },
 
-    identify(input: { name: string; harness: string; repo?: string; branch?: string }): Participant {
+    // Identity is (name, harness), not a fresh UUID per connection. An agent
+    // that reconnects — after a dropped session, a restarted harness, or a
+    // restarted server — is the same participant, and so still holds and can
+    // release its own claims. A new UUID each time would strand every live
+    // lease behind its TTL, which is the failure this product exists to stop.
+    identify(input: { name: string; harness: string; repo?: string; branch?: string }): {
+      participant: Participant;
+      resumed: boolean;
+      claims: Claim[];
+    } {
       const name = input.name?.trim();
       const harness = input.harness?.trim();
       if (!name) throw new QuorumError('name is required');
       if (!harness) throw new QuorumError('harness is required');
-      const participant: Participant = {
-        id: randomUUID(),
-        name,
-        harness,
-        repo: input.repo?.trim() || null,
-        branch: input.branch?.trim() || null,
-      };
+      const repo = input.repo?.trim() || null;
+      const branch = input.branch?.trim() || null;
+
+      const existing = db.prepare('SELECT * FROM participants WHERE name = ? AND harness = ?').get(name, harness) as
+        | { id: string }
+        | undefined;
+
+      if (existing) {
+        // Where it is working can change between sessions; who it is cannot.
+        db.prepare('UPDATE participants SET repo = ?, branch = ?, identified_at = ? WHERE id = ?').run(
+          repo,
+          branch,
+          now(),
+          existing.id,
+        );
+        const participant = requireParticipant(existing.id);
+        const held = liveClaims().filter((claim) => claim.participantId === participant.id);
+        appendEvent('participant_identified', null, { participant, resumed: true });
+        return { participant, resumed: true, claims: held };
+      }
+
+      const participant: Participant = { id: randomUUID(), name, harness, repo, branch };
       db.prepare(
         'INSERT INTO participants (id, name, harness, repo, branch, identified_at) VALUES (?, ?, ?, ?, ?, ?)',
       ).run(participant.id, participant.name, participant.harness, participant.repo, participant.branch, now());
-      appendEvent('participant_identified', null, { participant });
-      return participant;
+      appendEvent('participant_identified', null, { participant, resumed: false });
+      return { participant, resumed: false, claims: [] };
     },
 
     listParticipants(): Participant[] {
@@ -372,7 +396,12 @@ export function openQuorum(options: QuorumOptions = {}) {
       if (!repo) throw new QuorumError('repo is required');
       const purpose = input.purpose?.trim();
       if (!purpose) throw new QuorumError('purpose is required — a claim nobody can read is not coordination');
-      const patterns = normalizePatterns(input.patterns);
+      let patterns: string[];
+      try {
+        patterns = normalizePatterns(input.patterns);
+      } catch (error) {
+        throw error instanceof PatternError ? new QuorumError(error.message) : error;
+      }
       const branch = input.branch?.trim() || null;
       const expiresAt = ttlToExpiry(input.ttlSeconds);
 
@@ -426,16 +455,20 @@ export function openQuorum(options: QuorumOptions = {}) {
       return claim;
     },
 
+    // Idempotent: a retried release (the first response was lost) closes
+    // nothing further and announces nothing further. A lease closes once, so
+    // consumers of the feed see exactly one claim_released per claim.
     releaseClaim(input: { claimId: string; participantId: string }): Claim {
       const row = db.prepare('SELECT * FROM claims WHERE id = ?').get(input.claimId) as ClaimRow | undefined;
       if (!row) throw new QuorumError(`unknown claim: ${input.claimId}`);
       if (row.participant_id !== input.participantId) throw new QuorumError('only the holder can release a claim');
-      db.prepare('UPDATE claims SET closed_at = ?, closed_reason = ? WHERE id = ? AND closed_at IS NULL').run(
-        now(),
-        'released',
-        input.claimId,
-      );
       const claim = toClaim(row);
+      if (row.closed_at !== null) return claim;
+
+      const update = db
+        .prepare('UPDATE claims SET closed_at = ?, closed_reason = ? WHERE id = ? AND closed_at IS NULL')
+        .run(now(), 'released', input.claimId);
+      if (update.changes === 0n || update.changes === 0) return claim;
       appendEvent('claim_released', null, { claim });
       return claim;
     },

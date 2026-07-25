@@ -8,16 +8,23 @@
 //
 // Supported syntax is deliberately the subset a claim needs: `*` (within one
 // segment), `?` (one character), and `**` (any number of segments).
+//
+// Both levels of the search memoize on index pairs rather than recursing over
+// freshly sliced arrays. Without that, patterns with several `**` segments
+// revisit the same suffix pairs exponentially — and since this runs on the
+// server's only thread while a claim is granted, a slow answer is an outage.
+// Indices also mean no array copying, so the walk allocates nothing.
 
 // Can two single-segment patterns match a common string? The recursion is the
 // classic wildcard product automaton: at each step either side may consume a
 // character, and `*` may consume nothing at all.
 function segmentsIntersect(a: string, b: string): boolean {
-  const seen = new Set<string>();
+  const seen = new Set<number>();
+  const width = b.length + 1;
 
   const walk = (i: number, j: number): boolean => {
-    const key = `${i}:${j}`;
-    if (seen.has(key)) return false; // this pair is already being explored
+    const key = i * width + j;
+    if (seen.has(key)) return false; // already explored, and it did not accept
     seen.add(key);
 
     if (i === a.length && j === b.length) return true;
@@ -33,7 +40,7 @@ function segmentsIntersect(a: string, b: string): boolean {
 
     const left = a[i];
     const right = b[j];
-    if (left === '*' || right === '*') return false; // handled above; no literal match left
+    if (left === '*' || right === '*') return false; // handled above; nothing else can match
     if (left === '?' || right === '?' || left === right) return walk(i + 1, j + 1);
     return false;
   };
@@ -46,21 +53,32 @@ function segments(pattern: string): string[] {
 }
 
 function walkSegments(a: string[], b: string[]): boolean {
-  if (a.length === 0 && b.length === 0) return true;
+  const seen = new Set<number>();
+  const width = b.length + 1;
 
-  // `**` matches any number of segments, including none — so it either steps
-  // aside or swallows one segment from the other side and tries again.
-  if (a[0] === '**') {
-    if (walkSegments(a.slice(1), b)) return true;
-    return b.length > 0 && walkSegments(a, b.slice(1));
-  }
-  if (b[0] === '**') {
-    if (walkSegments(a, b.slice(1))) return true;
-    return a.length > 0 && walkSegments(a.slice(1), b);
-  }
+  const walk = (i: number, j: number): boolean => {
+    const key = i * width + j;
+    if (seen.has(key)) return false;
+    seen.add(key);
 
-  if (a.length === 0 || b.length === 0) return false;
-  return segmentsIntersect(a[0] ?? '', b[0] ?? '') && walkSegments(a.slice(1), b.slice(1));
+    if (i === a.length && j === b.length) return true;
+
+    // `**` matches any number of segments, including none — so it either steps
+    // aside or swallows one segment from the other side and tries again.
+    if (a[i] === '**') {
+      if (walk(i + 1, j)) return true;
+      return j < b.length && walk(i, j + 1);
+    }
+    if (b[j] === '**') {
+      if (walk(i, j + 1)) return true;
+      return i < a.length && walk(i + 1, j);
+    }
+
+    if (i === a.length || j === b.length) return false;
+    return segmentsIntersect(a[i] ?? '', b[j] ?? '') && walk(i + 1, j + 1);
+  };
+
+  return walk(0, 0);
 }
 
 export function globsOverlap(a: string, b: string): boolean {
@@ -72,9 +90,24 @@ export function scopesOverlap(a: readonly string[], b: readonly string[]): boole
   return a.some((left) => b.some((right) => globsOverlap(left, right)));
 }
 
+// Bounds, not because the walk is slow — it is memoized — but because a claim
+// nobody can read is not coordination, and neither is a thousand-glob scope.
+export const MAX_PATTERNS = 32;
+export const MAX_PATTERN_LENGTH = 256;
+
+export class PatternError extends Error {}
+
 // An empty pattern list means the whole repository, which is what an agent
 // that names no paths is really asking for.
 export function normalizePatterns(patterns: readonly string[] | undefined): string[] {
   const cleaned = (patterns ?? []).map((pattern) => pattern.trim()).filter((pattern) => pattern !== '');
+  if (cleaned.length > MAX_PATTERNS) {
+    throw new PatternError(`a claim may carry at most ${MAX_PATTERNS} patterns (got ${cleaned.length})`);
+  }
+  for (const pattern of cleaned) {
+    if (pattern.length > MAX_PATTERN_LENGTH) {
+      throw new PatternError(`pattern longer than ${MAX_PATTERN_LENGTH} characters: ${pattern.slice(0, 40)}…`);
+    }
+  }
   return cleaned.length > 0 ? cleaned : ['**'];
 }

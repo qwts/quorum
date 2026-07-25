@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS participants (
   identified_at INTEGER NOT NULL
 );
 
+-- Identity is the pair an agent introduces itself with, so a reconnecting
+-- agent resumes its own row — and its own claims — instead of stranding them.
+CREATE UNIQUE INDEX IF NOT EXISTS participants_identity ON participants (name, harness);
+
 CREATE TABLE IF NOT EXISTS rooms (
   id            TEXT PRIMARY KEY,
   name          TEXT NOT NULL UNIQUE,
