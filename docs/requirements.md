@@ -36,9 +36,10 @@ trace to.
 4. During a deliberation, participants can challenge (bounded discussion) and
    vote; every vote may carry a dissent note, and dissent is preserved verbatim
    in the outcome.
-5. A room is created with a decision rule — quorum threshold plus majority or
-   unanimity — defaulting to simple majority of room participants; the rule is
-   enforced, not advisory.
+5. A room is created with a decision rule — majority or unanimity, with the
+   quorum threshold derived from the rule ([Deliberation D5](deliberation.md));
+   configurable thresholds are v1 — defaulting to simple majority of room
+   participants; the rule is enforced, not advisory.
 6. A converged (or failed) deliberation produces an immutable decision record —
    question, options, votes, dissent — stored in room history and queryable
    over MCP.
@@ -124,8 +125,10 @@ this must not preclude.
   Pinned per org supply-chain convention.
 - **Risks:** MCP client behavior differences across harnesses (deferred by
   scoping v0 to Claude Code, but the contract must stay vendor-neutral);
-  protocol deadlock in unanimity rooms (mitigated: majority default now,
-  deadlines in v1); SkillOpt does not exist yet — nothing in v0 may depend
+  protocol deadlock in unanimity rooms (mitigated: majority default, and
+  phase deadlines are v0 core per [Deliberation D2](deliberation.md) — a
+  scope change from this document's first revision, agreed in the PR #9 lane
+  discussion); SkillOpt does not exist yet — nothing in v0 may depend
   on it.
 - **Sequencing:** this document and [Architecture](architecture.md) precede
   any feature issue; features then follow the

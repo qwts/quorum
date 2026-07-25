@@ -22,9 +22,9 @@ is a design decision with its reason attached; the implementation
 | D2 | Every open phase carries a deadline on the **phase**, never on a participant. | A vanished voter delays a decision by a bounded amount instead of deadlocking it. Deadlines on participants would need presence to be authoritative, and presence is advisory (D10). |
 | D3 | The eligible-voter roster is **snapshotted at `propose`** (current room members). Later joiners observe; they do not vote. | A moving roster makes "majority" a moving target and lets a mid-vote join flip an outcome no one deliberated with. |
 | D4 | Challenges are **ordinary messages carrying a `deliberation_id` tag**. Deliberation state references messages; it never lives in them. | The message table stays unambiguous — one kind of row, one meaning. The record cites challenge messages by id rather than copying them. |
-| D5 | Majority means **absolute majority of the eligible roster** (> half of eligible ballots for one option), not a majority of ballots cast. Unanimity means **every eligible voter** casts the same choice. | Requirements #5 says "simple majority of room participants" — of participants, not of turnout. It also makes the quorum threshold derived rather than stored: no option can win at low turnout by construction. |
+| D5 | Majority means **absolute majority of the eligible roster** (> half of eligible ballots for one option), not a majority of ballots cast. Unanimity means **every eligible voter** casts the same choice. The quorum threshold of requirements #5 is **derived from the rule** (majority → ⌊N/2⌋+1, unanimity → N), not stored per room. | Requirements #5 says "simple majority of room participants" — of participants, not of turnout — and its own default never exercises a threshold the rule does not already fix. Absolute-of-eligible means no option can win at low turnout by construction, which is what a quorum threshold is for. v0 offers no way to create a room with any other threshold (the shipped `rooms` table stores only the rule), so a stored threshold would be a column nothing can set; `decision_rule` being TEXT leaves the space for configurable rules in v1. This narrows the letter of requirements #5, and this PR amends that line to match — the contract and the design must not disagree. |
 | D6 | Ballots are hidden until the voting phase closes. **Who has voted is visible; what they voted is not.** Re-casting before close is allowed; the last ballot counts. | No anchoring (requirements #4) while keeping progress observable — a deadline-bound phase needs "3 of 5 have voted" to be visible to be useful. Re-casting costs nothing because nothing was revealed. |
-| D7 | The server closes a phase **the moment the outcome is mathematically determined**, else at the deadline. | Waiting out a deadline the remaining ballots cannot change wastes the room's time and invites "did it hang?" polling. |
+| D7 | Voting closes **at its deadline, or early once every eligible ballot is cast** — never mid-phase on partial information. | An earlier draft closed the moment the outcome was mathematically determined. Review killed it twice over: a mid-phase close forecloses the re-cast D6 promises (a transient disagreement would freeze into an immutable failure), and its timing leaks ballot state a hidden-ballot phase exists to hide. Turnout-complete close keeps decisions prompt without either defect — everyone has spoken at least once, and the close instant reveals nothing `ballot_cast` events did not already show. |
 | D8 | A deliberation that cannot converge **fails closed and says why**: the record names the rule, the tally shape, and — verbatim, quoted — the eligible voters who never cast. | Unanimity with a dead voter must produce an answer, and the answer must be actionable. Failure is an outcome, not an error. |
 | D9 | Decision records are **immutable rows written exactly once**, at close, in the same transaction as the phase change and its event. | Requirements #6 and #10: the records are the product's memory. One write, one event, no afterlife. |
 | D10 | Presence (Opus's lane) may **inform guidance, never outcomes**. The rule engine is deterministic from ballots + deadlines alone. | Two sessions replaying the same ballots must reach the same record. "The holder has gone quiet" is advice to a human; it is not evidence a vote will not arrive. |
@@ -101,8 +101,8 @@ propose ──▶ challenging ──(close_challenges by convener, or deadline)�
   `voting_opened` — the "call to vote" event of requirements #8.
 - **`voting`** — eligible voters cast `vote(deliberation, choice, dissent?)`.
   Ballot upsert per D6; each cast emits `ballot_cast` carrying the actor but
-  **not the choice**. The phase closes early the moment the rule is decided
-  (D7) or at the deadline, whichever first.
+  **not the choice**. The phase closes at its deadline, or early once all
+  eligible ballots are in (D7) — never mid-phase on partial information.
 - **`converged` / `failed`** — terminal. The decision row, the phase change,
   and the closing event (`deliberation_converged` / `deliberation_failed`)
   are one transaction (D9). Out-of-phase actions are rejected with the phase
@@ -118,18 +118,28 @@ a deadline it is sleeping through expires.
 
 With the roster frozen at N eligible voters (D3, D5):
 
-- **Majority** — an option converges when its ballots exceed N/2. Fails when
-  no option can any longer reach that (early, D7) or the deadline passes with
-  no absolute majority. The failure reason distinguishes `quorum_absent`
-  (some eligible never cast — named, quoted) from `rule_unmet` (everyone
-  cast, no option cleared N/2 — tally in the record). A deadline expiring is
-  how a failure is *detected*, not a kind of its own — it always resolves to
-  one of these two.
-- **Unanimity** — converges when all N ballots agree. Fails **early** the
-  moment two distinct choices exist (no waiting out a deadline that cannot
-  save it), or at the deadline with non-voters named. This is the
-  dead-voter case from the lane agreement: bounded delay, then a record that
+The outcome is computed once, at close (deadline or turnout-complete, D7),
+from the ballots that exist at that instant:
+
+- **Majority** — converged if one option's ballots exceed N/2 (possible even
+  at partial turnout: 4 of 6 cast the same choice is a majority of 6).
+- **Unanimity** — converged if all N ballots exist and agree. A disagreement
+  before close is *not* a failure — a voter may re-cast (D6) until the phase
+  closes; only the close freezes it. This is the dead-voter case from the
+  lane agreement: bounded delay via the phase deadline, then a record that
   says exactly which quoted names never answered.
+
+A failed close is classified by whether the absentees were decisive
+(`failure_kind`, one of two — a deadline expiring is how failure is
+*detected*, never a kind of its own):
+
+- **`quorum_absent`** — ballots are missing, and some completion of them
+  could have satisfied the rule. Turnout was the problem; the non-voters are
+  named, quoted, in the reason.
+- **`rule_unmet`** — the rule was not satisfied and no completion of the
+  missing ballots (if any) could have satisfied it: a full-turnout split, or
+  votes already too dispersed for any option to reach the bar. The tally in
+  the record is the explanation.
 - N = 1 degenerates cleanly: the solo member's ballot converges instantly.
   Not useful, not harmful, not special-cased.
 
