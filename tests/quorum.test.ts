@@ -298,6 +298,117 @@ test('a claim cannot carry an unbounded scope', () => {
   quorum.close();
 });
 
+test('a cursor outlives the connection that made it', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'quorum-cursor-'));
+  const path = join(dir, 'quorum.db');
+  try {
+    const first = openQuorum({ path });
+    const ada = first.identify({ name: 'ada', harness: 'test' });
+    const grace = first.identify({ name: 'grace', harness: 'test' });
+    assert.equal(ada.cursor, 0, 'the very first participant has nothing behind it');
+    assert.equal(grace.cursor >= ada.cursor, true, 'a newcomer starts at the head, not at zero');
+    assert.equal(grace.unseen, 0, 'arriving is not the same as having missed everything');
+
+    first.createRoom({ name: 'platform', by: ada.participant.id });
+    first.joinRoom({ room: 'platform', participantId: grace.participant.id });
+
+    // Ada reads a batch. Nothing durable moves yet — a batch that was sent is
+    // not a batch that arrived.
+    const consumed = await first.waitForEvents({
+      afterSeq: ada.cursor,
+      timeoutMs: 0,
+      participantId: ada.participant.id,
+    });
+    const stopped = consumed.at(-1)!.seq;
+    assert.equal(first.cursorFor(ada.participant.id).cursor, ada.cursor, 'sending is not delivering');
+
+    // Coming back for what follows is the acknowledgement that it did arrive.
+    await first.waitForEvents({ afterSeq: stopped, timeoutMs: 0, participantId: ada.participant.id });
+    assert.equal(first.cursorFor(ada.participant.id).cursor, stopped);
+
+    // Ada posts (does not advance her), then Grace says something Ada never reads.
+    first.postMessage({ room: 'platform', participantId: ada.participant.id, body: 'heading out' });
+    first.postMessage({ room: 'platform', participantId: grace.participant.id, body: 'the one ada missed' });
+    assert.equal(first.cursorFor(ada.participant.id).cursor, stopped, 'posting is not consuming');
+    first.close();
+
+    const second = openQuorum({ path });
+    const back = second.identify({ name: 'ada', harness: 'test' });
+    assert.equal(back.cursor, stopped, 'resumed where consumption stopped, not at the head');
+    assert.equal(back.unseen, 2, 'and is told how much waits, not handed it');
+
+    const missed = await second.waitForEvents({
+      afterSeq: back.cursor,
+      timeoutMs: 0,
+      participantId: back.participant.id,
+    });
+    const bodies = missed
+      .map((event) => (event.payload as { message?: { body: string } }).message?.body)
+      .filter(Boolean);
+    assert.ok(bodies.includes('the one ada missed'), 'the normal call recovers them — no catch-up API');
+    second.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a batch that never arrived is not recorded as delivered', async () => {
+  // The dropped response: the server reads the rows, the connection dies before
+  // the reply lands, and the agent reconnects. If the cursor advanced on send,
+  // those events are gone forever — the exact skip a durable cursor exists to
+  // prevent.
+  const dir = mkdtempSync(join(tmpdir(), 'quorum-ack-'));
+  const path = join(dir, 'quorum.db');
+  try {
+    const first = openQuorum({ path });
+    const ada = first.identify({ name: 'ada', harness: 'test' });
+    const grace = first.identify({ name: 'grace', harness: 'test' });
+    first.createRoom({ name: 'platform', by: grace.participant.id });
+    first.postMessage({ room: 'platform', participantId: grace.participant.id, body: 'lost in flight' });
+
+    const sent = await first.waitForEvents({
+      afterSeq: ada.cursor,
+      timeoutMs: 0,
+      participantId: ada.participant.id,
+    });
+    assert.ok(sent.length > 0, 'the server did read a batch');
+    first.close(); // the reply never reached Ada
+
+    const second = openQuorum({ path });
+    const back = second.identify({ name: 'ada', harness: 'test' });
+    assert.equal(back.cursor, ada.cursor, 'the undelivered batch is still ahead of her');
+    assert.equal(back.unseen, sent.length);
+    const replayed = await second.waitForEvents({
+      afterSeq: back.cursor,
+      timeoutMs: 0,
+      participantId: back.participant.id,
+    });
+    const bodies = replayed
+      .map((event) => (event.payload as { message?: { body: string } }).message?.body)
+      .filter(Boolean);
+    assert.ok(bodies.includes('lost in flight'), 'replayed rather than skipped');
+    second.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an unknown participant is a caller bug, not an empty cursor', () => {
+  const quorum = openQuorum();
+  assert.throws(() => quorum.cursorFor('nobody'), /unknown participant/);
+  quorum.close();
+});
+
+test('an unidentified observer consumes without owning a cursor', async () => {
+  const quorum = openQuorum();
+  const ada = agent(quorum, 'ada');
+  quorum.createRoom({ name: 'platform', by: ada.id });
+  const seen = await quorum.waitForEvents({ afterSeq: 0, timeoutMs: 0, participantId: null });
+  assert.ok(seen.length > 0, 'an observer still reads the feed');
+  assert.equal(quorum.cursorFor(ada.id).cursor, 0, 'and moves nobody else\'s cursor doing it');
+  quorum.close();
+});
+
 test('a database made before a column existed still opens', () => {
   // The upgrade path someone actually hits: they ran quorum, we shipped a new
   // column, they pulled and restarted. CREATE TABLE IF NOT EXISTS will not add

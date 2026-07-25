@@ -265,27 +265,33 @@ export async function callTool(
 ): Promise<ToolReply> {
   switch (name) {
     case 'identify': {
-      const { participant, resumed, claims } = quorum.identify({
+      const { participant, resumed, claims, cursor, unseen } = quorum.identify({
         name: str(args, 'name') ?? '',
         harness: str(args, 'harness') ?? '',
         repo: str(args, 'repo'),
         branch: str(args, 'branch'),
       });
       session.participantId = participant.id;
-      // A new session starts listening from now; the claims it still holds
-      // come back in the reply, so nothing it owns is lost by doing so.
-      const cursor = quorum.latestSeq();
+      // The cursor belongs to the participant, not this connection (#11), so a
+      // reconnect resumes where consumption stopped instead of at the head.
       session.cursor = cursor;
       const held =
         claims.length > 0
           ? ` You already hold ${claims.length} claim(s) from an earlier session — release_claim the ones you have finished with.`
           : '';
+      // The count, not the events: an agent away for a week needs to choose
+      // between sweeping the feed and reading selectively, not receive a reply
+      // it cannot use.
+      const waiting =
+        unseen > 0
+          ? ` ${unseen} event(s) happened while you were away — call wait_for_events with after_seq=${cursor} to take them in order, or read_messages per room if you only need the conversation.`
+          : ` When you have nothing to do, call wait_for_events with after_seq=${cursor} — it blocks until someone needs you.`;
       return {
         guidance:
           `You are ${quoted(participant.name)} on the roster${resumed ? ', resumed from an earlier session' : ''}.${held}` +
           ` Claim before you edit: call claim_scope with the paths you are about to touch.` +
-          ` When you have nothing to do, call wait_for_events with after_seq=${cursor} — it blocks until someone needs you.`,
-        data: { participant, resumed, claims, cursor },
+          waiting,
+        data: { participant, resumed, claims, cursor, unseen },
       };
     }
 
@@ -374,6 +380,7 @@ export async function callTool(
       const events = await quorum.waitForEvents({
         afterSeq: num(args, 'after_seq') ?? 0,
         timeoutMs: num(args, 'timeout_ms'),
+        participantId: session.participantId,
       });
       const cursor = events.length > 0 ? events[events.length - 1]!.seq : (num(args, 'after_seq') ?? 0);
       session.cursor = cursor;
