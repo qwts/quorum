@@ -63,7 +63,10 @@ CREATE TABLE decisions (
   room_id         TEXT NOT NULL REFERENCES rooms(id),
   outcome         TEXT NOT NULL,  -- 'converged' | 'failed'
   chosen          INTEGER,        -- option index; NULL when failed
-  reason          TEXT NOT NULL,  -- server-authored: rule, tally shape, and (quoted) non-voters on failure (D8)
+  failure_kind    TEXT,           -- 'rule_unmet' | 'quorum_absent'; NULL when converged.
+                                  -- Typed so the record card and phase stepper render failure
+                                  -- without parsing prose (Design System pass, DM screen).
+  reason          TEXT NOT NULL,  -- server-authored prose: rule, tally shape, and (quoted) non-voters on failure (D8)
   record          TEXT NOT NULL,  -- JSON: question, options, rule snapshot, eligible roster,
                                   -- ballots (choice + dissent verbatim), challenge message ids (D4)
   closed_at       INTEGER NOT NULL
@@ -117,9 +120,11 @@ With the roster frozen at N eligible voters (D3, D5):
 
 - **Majority** — an option converges when its ballots exceed N/2. Fails when
   no option can any longer reach that (early, D7) or the deadline passes with
-  no absolute majority. The failure reason distinguishes "turnout too low"
-  (some eligible never cast — named, quoted) from "split" (everyone cast, no
-  option cleared N/2 — tally in the record).
+  no absolute majority. The failure reason distinguishes `quorum_absent`
+  (some eligible never cast — named, quoted) from `rule_unmet` (everyone
+  cast, no option cleared N/2 — tally in the record). A deadline expiring is
+  how a failure is *detected*, not a kind of its own — it always resolves to
+  one of these two.
 - **Unanimity** — converges when all N ballots agree. Fails **early** the
   moment two distinct choices exist (no waiting out a deadline that cannot
   save it), or at the deadline with non-voters named. This is the
