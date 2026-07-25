@@ -49,8 +49,11 @@ function mcpServerFor(quorum: Quorum): Server {
           {
             type: 'text' as const,
             text:
-              'That call failed; the error is below as data. Fix the call and try again — if you are stuck, ' +
-              'say so in a room with post_message rather than working around it.\n\n' +
+              'That call failed; the error is below as data. Fix the call and try again' +
+              (session.participantId === null
+                ? ' — start with identify, which every other tool needs.'
+                : ' — if you are stuck, say so in a room with post_message rather than working around it.') +
+              '\n\n' +
               JSON.stringify({ error: message }, null, 2),
           },
         ],

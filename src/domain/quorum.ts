@@ -50,6 +50,10 @@ export type QuorumEvent = {
   seq: number;
   kind: string;
   roomId: string | null;
+  // The participant whose action produced this event, or null for the server
+  // itself (an expiring lease). A reader compares it to its own id to tell
+  // its echo from someone else's news.
+  actorId: string | null;
   payload: Record<string, unknown>;
   createdAt: number;
 };
@@ -106,10 +110,16 @@ export function openQuorum(options: QuorumOptions = {}) {
     };
   }
 
-  function appendEvent(kind: string, roomId: string | null, payload: Record<string, unknown>): void {
-    db.prepare('INSERT INTO events (kind, room_id, payload, created_at) VALUES (?, ?, ?, ?)').run(
+  function appendEvent(
+    kind: string,
+    roomId: string | null,
+    payload: Record<string, unknown>,
+    actorId: string | null,
+  ): void {
+    db.prepare('INSERT INTO events (kind, room_id, actor_id, payload, created_at) VALUES (?, ?, ?, ?, ?)').run(
       kind,
       roomId,
+      actorId,
       JSON.stringify(payload),
       now(),
     );
@@ -154,7 +164,7 @@ export function openQuorum(options: QuorumOptions = {}) {
         'expired',
         row.id,
       );
-      appendEvent('claim_expired', null, { claim: toClaim(row) });
+      appendEvent('claim_expired', null, { claim: toClaim(row) }, null); // nobody acted; the clock did
     }
   }
 
@@ -180,6 +190,7 @@ export function openQuorum(options: QuorumOptions = {}) {
       seq: number;
       kind: string;
       room_id: string | null;
+      actor_id: string | null;
       payload: string;
       created_at: number;
     }[];
@@ -187,6 +198,7 @@ export function openQuorum(options: QuorumOptions = {}) {
       seq: row.seq,
       kind: row.kind,
       roomId: row.room_id,
+      actorId: row.actor_id,
       payload: JSON.parse(row.payload) as Record<string, unknown>,
       createdAt: row.created_at,
     }));
@@ -237,7 +249,7 @@ export function openQuorum(options: QuorumOptions = {}) {
         );
         const participant = requireParticipant(existing.id);
         const held = liveClaims().filter((claim) => claim.participantId === participant.id);
-        appendEvent('participant_identified', null, { participant, resumed: true });
+        appendEvent('participant_identified', null, { participant, resumed: true }, participant.id);
         return { participant, resumed: true, claims: held };
       }
 
@@ -245,7 +257,7 @@ export function openQuorum(options: QuorumOptions = {}) {
       db.prepare(
         'INSERT INTO participants (id, name, harness, repo, branch, identified_at) VALUES (?, ?, ?, ?, ?, ?)',
       ).run(participant.id, participant.name, participant.harness, participant.repo, participant.branch, now());
-      appendEvent('participant_identified', null, { participant, resumed: false });
+      appendEvent('participant_identified', null, { participant, resumed: false }, participant.id);
       return { participant, resumed: false, claims: [] };
     },
 
@@ -292,7 +304,7 @@ export function openQuorum(options: QuorumOptions = {}) {
         creator.id,
         now(),
       );
-      appendEvent('room_created', room.id, { room });
+      appendEvent('room_created', room.id, { room }, creator.id);
       return room;
     },
 
@@ -332,7 +344,7 @@ export function openQuorum(options: QuorumOptions = {}) {
           participant.id,
           now(),
         );
-        appendEvent('room_joined', room.id, { room, participant });
+        appendEvent('room_joined', room.id, { room, participant }, participant.id);
       }
       return room;
     },
@@ -358,7 +370,7 @@ export function openQuorum(options: QuorumOptions = {}) {
         body,
         createdAt: at,
       };
-      appendEvent('message', room.id, { message, from: participant.name });
+      appendEvent('message', room.id, { message, from: participant.name }, participant.id);
       return message;
     },
 
@@ -440,7 +452,7 @@ export function openQuorum(options: QuorumOptions = {}) {
         claim.grantedAt,
         claim.expiresAt,
       );
-      appendEvent('claim_granted', null, { claim, by: participant.name });
+      appendEvent('claim_granted', null, { claim, by: participant.name }, participant.id);
       return { ok: true, claim };
     },
 
@@ -454,7 +466,7 @@ export function openQuorum(options: QuorumOptions = {}) {
       const expiresAt = ttlToExpiry(input.ttlSeconds);
       db.prepare('UPDATE claims SET expires_at = ? WHERE id = ?').run(expiresAt, input.claimId);
       const claim = { ...toClaim(row), expiresAt };
-      appendEvent('claim_renewed', null, { claim });
+      appendEvent('claim_renewed', null, { claim }, input.participantId);
       return claim;
     },
 
@@ -472,7 +484,7 @@ export function openQuorum(options: QuorumOptions = {}) {
         .prepare('UPDATE claims SET closed_at = ?, closed_reason = ? WHERE id = ? AND closed_at IS NULL')
         .run(now(), 'released', input.claimId);
       if (update.changes === 0n || update.changes === 0) return claim;
-      appendEvent('claim_released', null, { claim });
+      appendEvent('claim_released', null, { claim }, input.participantId);
       return claim;
     },
 

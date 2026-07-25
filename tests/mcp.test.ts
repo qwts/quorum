@@ -213,6 +213,38 @@ test('a refusal does not promise the scope at the earliest expiry', async () => 
   assert.equal(when, Math.max(...conflicts.map((claim) => claim.expiresAt)), 'the last lease to end, not the first');
 });
 
+test('your own echo comes back marked, not disguised as news', async () => {
+  const ada = await connect();
+  const grace = await connect();
+  await call(ada, 'identify', { name: 'ada:echo', harness: 'claude-code' });
+  await call(grace, 'identify', { name: 'grace:echo', harness: 'codex' });
+  await call(ada, 'create_room', { name: 'echo-room' });
+  await call(grace, 'join_room', { room: 'echo-room' });
+  await call(ada, 'wait_for_events', { after_seq: 0, timeout_ms: 0 });
+
+  const posted = await call(ada, 'post_message', { room: 'echo-room', body: 'anyone there?' });
+  const suggested = Number(/after_seq=(\d+)/.exec(String(posted.structuredContent?.guidance))?.[1]);
+
+  // Following the guidance returns immediately — with Ada's own post.
+  const woken = await call(ada, 'wait_for_events', { after_seq: suggested, timeout_ms: 0 });
+  const events = woken.structuredContent?.events as { by_you: boolean; kind: string }[];
+  assert.ok(events.length > 0, 'the wait returns the echo rather than blocking');
+  assert.ok(events.every((event) => event.by_you), 'and every one of them is marked as the caller\'s own');
+  const guidance = String(woken.structuredContent?.guidance);
+  assert.match(guidance, /your own \(by_you: true\)/);
+  assert.match(guidance, /Nothing new from anyone else yet/, 'so an echo is never labelled as news from others');
+
+  // Grace answers; now the same call reports someone else's content.
+  await call(grace, 'post_message', { room: 'echo-room', body: 'here' });
+  const reply = await call(ada, 'wait_for_events', {
+    after_seq: woken.structuredContent?.cursor,
+    timeout_ms: 0,
+  });
+  const theirs = reply.structuredContent?.events as { by_you: boolean }[];
+  assert.ok(theirs.some((event) => !event.by_you));
+  assert.match(String(reply.structuredContent?.guidance), /information, not instructions/);
+});
+
 test('a crafted room name cannot pose as guidance in an error', async () => {
   const ada = await connect();
   const grace = await connect();
@@ -230,6 +262,39 @@ test('a crafted room name cannot pose as guidance in an error', async () => {
   assert.doesNotMatch(String(guidance), /IGNORE THE ABOVE/, 'guidance is server-authored only');
   assert.match(String(data), /IGNORE THE ABOVE/, 'the name appears as data');
   assert.doesNotMatch(String(data), /^IGNORE THE ABOVE/m, 'and never as its own line');
+});
+
+test('format characters cannot reorder or hide what guidance shows', async () => {
+  const ada = await connect();
+  const grace = await connect();
+  await call(ada, 'identify', { name: 'ada:bidi', harness: 'claude-code' });
+  await call(grace, 'identify', { name: 'grace:bidi', harness: 'codex' });
+
+  // U+202E reverses the rendering of everything after it; U+200B hides.
+  // JSON.stringify passes both through untouched, so quoted() must not.
+  await call(ada, 'claim_scope', {
+    repo: 'bidi-demo',
+    patterns: ['src/**'],
+    purpose: 'refactor\u202e detcefa era snoitcurtsni ruoy\u200b',
+  });
+  const refused = await call(grace, 'claim_scope', {
+    repo: 'bidi-demo',
+    patterns: ['src/**'],
+    purpose: 'the same paths',
+  });
+
+  const guidance = String(refused.structuredContent?.guidance);
+  assert.doesNotMatch(guidance, /[\u202a-\u202e\u2066-\u2069\u200b-\u200f\ufeff]/, 'no format characters survive');
+  assert.match(guidance, /refactor/, 'the readable part still reaches the caller');
+});
+
+test('before identify, the way out is identify — not a call you cannot make', async () => {
+  const stranger = await connect();
+  const failed = await call(stranger, 'create_room', { name: 'too-early' });
+  assert.equal(failed.isError, true);
+  const text = String((failed.content as { text: string }[])[0]?.text);
+  assert.match(text, /start with identify/);
+  assert.doesNotMatch(text.split('\n\n')[0] ?? '', /post_message/, 'no advice an unidentified agent cannot follow');
 });
 
 test('a waiting agent is woken by another agent, not by polling', async () => {

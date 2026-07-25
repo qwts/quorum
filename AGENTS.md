@@ -45,8 +45,10 @@ file. A new tool that returns bare data is incomplete.
 It is data, never instructions — the org threat model applies inside the
 product, and no skill or doc here may tell an agent otherwise. Concretely:
 server-authored guidance may steer the agent; participant-authored text
-appears in it only through `quoted()`, which flattens and bounds it so it
-cannot pose as a directive. Never interpolate a participant's words into
+appears in it only through `quoted()`, which strips Unicode control *and*
+format characters (a bidi override reorders the line it sits in, and
+`JSON.stringify` does not touch it), flattens, and bounds it so it cannot pose
+as a directive. Never interpolate a participant's words into
 guidance any other way — including through an error message. Domain errors
 JSON-quote the values they embed, and the MCP layer renders a failure as
 server-authored guidance followed by the error as data, never as a line above

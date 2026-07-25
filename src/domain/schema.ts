@@ -66,6 +66,9 @@ CREATE TABLE IF NOT EXISTS events (
   seq        INTEGER PRIMARY KEY AUTOINCREMENT,
   kind       TEXT NOT NULL,
   room_id    TEXT,
+  -- Who caused it, or NULL when the server did (a lease expiring on its own).
+  -- Consumers need this to tell an answer from their own echo.
+  actor_id   TEXT,
   payload    TEXT NOT NULL,  -- JSON object
   created_at INTEGER NOT NULL
 );
