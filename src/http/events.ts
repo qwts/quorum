@@ -52,6 +52,13 @@ function frame(id: number, event: string, data: unknown): string {
   return `id: ${id}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
+/** A seq from a header or query value, or null when it is absent or not a number. */
+function seqFrom(value: string | string[] | undefined | null): number | null {
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.trunc(parsed) : null;
+}
+
 /**
  * Stream events after a cursor. Returns false when the request is not ours.
  *
@@ -59,6 +66,13 @@ function frame(id: number, event: string, data: unknown): string {
  * from `?after=` otherwise. The header wins: the browser knows what it
  * actually received, and the query string is only what the page asked for when
  * it first opened.
+ *
+ * With neither, the stream tails from the current head. A page that wants no
+ * gap between its first paint and its stream passes the `seq` its read
+ * returned — every `/api/` response carries one, stamped before the read, so
+ * an event that lands in between is delivered twice rather than not at all.
+ * That is the same call the domain's durable cursor makes: replay is the side
+ * to err on, because a duplicate is visible and a gap is not.
  */
 export function serveEvents(req: IncomingMessage, res: ServerResponse, url: URL, quorum: Quorum): boolean {
   if (url.pathname !== EVENTS_PATH) return false;
@@ -69,9 +83,11 @@ export function serveEvents(req: IncomingMessage, res: ServerResponse, url: URL,
     return true;
   }
 
-  const resumed = Number(req.headers['last-event-id']);
-  const asked = Number(url.searchParams.get('after'));
-  const start = Number.isFinite(resumed) ? resumed : Number.isFinite(asked) ? asked : quorum.latestSeq();
+  // `Number(null)` is 0 and passes `Number.isFinite`, so parsing before
+  // checking presence would make every fresh stream replay all of history and
+  // leave the head fallback below as dead code. Absent and zero are different
+  // answers; `?after=0` means "everything", no parameter means "from now".
+  const start = seqFrom(req.headers['last-event-id']) ?? seqFrom(url.searchParams.get('after')) ?? quorum.latestSeq();
 
   res.writeHead(200, {
     'content-type': 'text/event-stream; charset=utf-8',

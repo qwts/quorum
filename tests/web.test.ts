@@ -97,6 +97,39 @@ test('the read API answers from the same domain the tools call', async () => {
   assert.equal(messages.body.messages.at(-1).body, 'Claiming src/mcp/** for the schema pass.');
 });
 
+test('a fresh stream tails from the head; only ?after= replays', async () => {
+  // `Number(null)` is 0 and passes `Number.isFinite`, so parsing before
+  // checking presence made every fresh stream replay all of history and left
+  // the head fallback as dead code. Absent and zero are different answers.
+  const head = quorum.latestSeq();
+  assert.ok(head > 0, 'there is history to replay if the default is wrong');
+
+  const fresh = await stream('/api/events', 1);
+  assert.equal(fresh[0]!.event, 'cursor');
+  assert.equal(fresh[0]!.data.after, head, 'no parameter means "from now", not "from the beginning"');
+
+  const replay = await stream('/api/events?after=0', 2);
+  assert.equal(replay[0]!.data.after, 0, '?after=0 is an explicit ask for everything, and is honoured');
+  assert.ok(replay.slice(1).some((f) => f.event !== 'cursor'), 'history actually arrives');
+});
+
+test('a page can open its stream where its first paint ended, with no gap', async () => {
+  // Every read is stamped with the feed position *before* it ran, so a page
+  // that opens the stream at that seq cannot miss an event that landed while
+  // it was painting. The cost is that such an event arrives twice — which is
+  // the trade the durable cursor already makes: a duplicate is visible and a
+  // gap is not.
+  const painted = await get('/api/rooms/protocol/messages');
+  assert.equal(typeof painted.body.seq, 'number');
+  assert.ok(painted.body.seq <= quorum.latestSeq());
+
+  const arrived = await stream(`/api/events?after=${painted.body.seq}`, 2, () => {
+    quorum.postMessage({ room: 'protocol', participantId: dana.id, body: 'posted while the page was painting' });
+  });
+  const posted = arrived.find((f) => f.event === 'message');
+  assert.equal(posted?.data.payload.message.body, 'posted while the page was painting');
+});
+
 test('a room nobody created is a 404, not a crash', async () => {
   const missing = await get('/api/rooms/no-such-room/messages');
   assert.equal(missing.status, 404);

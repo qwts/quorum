@@ -10,6 +10,14 @@
 // second query path, so a human and an agent cannot be shown different
 // answers to the same question — the layering rule in AGENTS.md, applied to
 // the transport that came second.
+//
+// Every response carries `seq`, the feed position **before** the read ran. A
+// page opens its stream at that seq and has no gap between first paint and
+// live: an event that lands between the stamp and the read is delivered
+// twice, never zero times. Stamping after the read would close the duplicate
+// and open the gap, which is the worse trade — a duplicate is visible and a
+// gap is not. The domain's durable cursor makes the same call for the same
+// reason.
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { QuorumError } from '../domain/errors.ts';
@@ -17,7 +25,7 @@ import type { Quorum } from '../domain/quorum.ts';
 
 export const API_PREFIX = '/api/';
 
-function send(res: ServerResponse, status: number, body: unknown): void {
+function send(res: ServerResponse, status: number, body: Record<string, unknown>): void {
   const text = JSON.stringify(body, null, 2);
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
   res.end(text);
@@ -45,25 +53,28 @@ export function serveApi(req: IncomingMessage, res: ServerResponse, url: URL, qu
 
   const route = url.pathname.slice(API_PREFIX.length);
 
+  // Before the read, deliberately. See the note at the top of this file.
+  const seq = quorum.latestSeq();
+
   try {
     if (route === 'rooms') {
-      send(res, 200, { rooms: quorum.listRooms() });
+      send(res, 200, { seq, rooms: quorum.listRooms() });
       return true;
     }
 
     if (route === 'participants') {
-      send(res, 200, { participants: quorum.listParticipants() });
+      send(res, 200, { seq, participants: quorum.listParticipants() });
       return true;
     }
 
     if (route === 'claims') {
       const repo = url.searchParams.get('repo') ?? undefined;
-      send(res, 200, { claims: quorum.listClaims({ repo }) });
+      send(res, 200, { seq, claims: quorum.listClaims({ repo }) });
       return true;
     }
 
     if (route === 'decisions') {
-      send(res, 200, { decisions: quorum.listDecisions({ room: url.searchParams.get('room') ?? undefined }) });
+      send(res, 200, { seq, decisions: quorum.listDecisions({ room: url.searchParams.get('room') ?? undefined }) });
       return true;
     }
 
@@ -71,6 +82,7 @@ export function serveApi(req: IncomingMessage, res: ServerResponse, url: URL, qu
     if (messages) {
       const room = decodeURIComponent(messages[1]!);
       send(res, 200, {
+        seq,
         room,
         messages: quorum.readMessages({
           room,
