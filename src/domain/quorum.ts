@@ -64,6 +64,9 @@ export type QuorumOptions = {
 const DEFAULT_TTL_SECONDS = 30 * 60;
 const MAX_TTL_SECONDS = 12 * 60 * 60;
 
+// Domain errors reach agents as text. Any participant- or caller-authored
+// value interpolated into one is JSON-quoted at the throw site, so a room
+// named with a newline and a directive cannot read as guidance downstream.
 export class QuorumError extends Error {}
 
 type ClaimRow = {
@@ -117,7 +120,7 @@ export function openQuorum(options: QuorumOptions = {}) {
     const row = db.prepare('SELECT * FROM participants WHERE id = ?').get(id) as
       | { id: string; name: string; harness: string; repo: string | null; branch: string | null }
       | undefined;
-    if (!row) throw new QuorumError(`unknown participant: ${id} — call identify first`);
+    if (!row) throw new QuorumError(`unknown participant: ${JSON.stringify(id)} — call identify first`);
     return { id: row.id, name: row.name, harness: row.harness, repo: row.repo, branch: row.branch };
   }
 
@@ -125,7 +128,7 @@ export function openQuorum(options: QuorumOptions = {}) {
     const row = db.prepare('SELECT * FROM rooms WHERE id = ? OR name = ?').get(id, id) as
       | { id: string; name: string; topic: string | null; decision_rule: string; created_by: string }
       | undefined;
-    if (!row) throw new QuorumError(`unknown room: ${id}`);
+    if (!row) throw new QuorumError(`unknown room: ${JSON.stringify(id)}`);
     return {
       id: row.id,
       name: row.name,
@@ -272,7 +275,7 @@ export function openQuorum(options: QuorumOptions = {}) {
         throw new QuorumError("decision_rule must be 'majority' or 'unanimity'");
       }
       if (db.prepare('SELECT id FROM rooms WHERE name = ?').get(name)) {
-        throw new QuorumError(`room already exists: ${name}`);
+        throw new QuorumError(`room already exists: ${JSON.stringify(name)}`);
       }
       const room: Room = {
         id: randomUUID(),
@@ -340,7 +343,7 @@ export function openQuorum(options: QuorumOptions = {}) {
       const member = db
         .prepare('SELECT 1 FROM room_members WHERE room_id = ? AND participant_id = ?')
         .get(room.id, participant.id);
-      if (!member) throw new QuorumError(`join ${room.name} before posting to it`);
+      if (!member) throw new QuorumError(`join ${JSON.stringify(room.name)} before posting to it`);
       const body = input.body?.trim();
       if (!body) throw new QuorumError('message body is required');
 
@@ -444,7 +447,7 @@ export function openQuorum(options: QuorumOptions = {}) {
     renewClaim(input: { claimId: string; participantId: string; ttlSeconds?: number }): Claim {
       sweepExpired();
       const row = db.prepare('SELECT * FROM claims WHERE id = ?').get(input.claimId) as ClaimRow | undefined;
-      if (!row) throw new QuorumError(`unknown claim: ${input.claimId}`);
+      if (!row) throw new QuorumError(`unknown claim: ${JSON.stringify(input.claimId)}`);
       if (row.participant_id !== input.participantId) throw new QuorumError('only the holder can renew a claim');
       if (row.closed_at !== null) throw new QuorumError('claim has already ended — take a new one');
 
@@ -460,7 +463,7 @@ export function openQuorum(options: QuorumOptions = {}) {
     // consumers of the feed see exactly one claim_released per claim.
     releaseClaim(input: { claimId: string; participantId: string }): Claim {
       const row = db.prepare('SELECT * FROM claims WHERE id = ?').get(input.claimId) as ClaimRow | undefined;
-      if (!row) throw new QuorumError(`unknown claim: ${input.claimId}`);
+      if (!row) throw new QuorumError(`unknown claim: ${JSON.stringify(input.claimId)}`);
       if (row.participant_id !== input.participantId) throw new QuorumError('only the holder can release a claim');
       const claim = toClaim(row);
       if (row.closed_at !== null) return claim;

@@ -8,7 +8,10 @@
 import type { Claim, Quorum } from '../domain/quorum.ts';
 import { QuorumError } from '../domain/quorum.ts';
 
-export type Session = { participantId: string | null };
+// A session carries the caller's own cursor. Guidance must never point an
+// agent at the global feed head: an event another participant appended since
+// the caller last read would be skipped forever by following it.
+export type Session = { participantId: string | null; cursor: number };
 
 type Json = Record<string, unknown>;
 
@@ -262,7 +265,10 @@ export async function callTool(
         branch: str(args, 'branch'),
       });
       session.participantId = participant.id;
+      // A new session starts listening from now; the claims it still holds
+      // come back in the reply, so nothing it owns is lost by doing so.
       const cursor = quorum.latestSeq();
+      session.cursor = cursor;
       const held =
         claims.length > 0
           ? ` You already hold ${claims.length} claim(s) from an earlier session — release_claim the ones you have finished with.`
@@ -298,7 +304,7 @@ export async function callTool(
       return {
         guidance:
           `Room ${quoted(room.name)} created and you are in it.` +
-          ` Say what you are working on with post_message, then call wait_for_events with after_seq=${quorum.latestSeq()}.`,
+          ` Say what you are working on with post_message, then call wait_for_events with after_seq=${session.cursor}.`,
         data: { room },
       };
     }
@@ -335,7 +341,8 @@ export async function callTool(
       return {
         guidance:
           `Posted. Others are woken by it.` +
-          ` If you expect an answer, call wait_for_events with after_seq=${message.id > 0 ? quorum.latestSeq() : quorum.latestSeq()} rather than asking again.`,
+          ` If you expect an answer, call wait_for_events with after_seq=${session.cursor} rather than asking again` +
+          ` — that is your own cursor, so anything you have not seen yet still reaches you.`,
         data: { message },
       };
     }
@@ -361,6 +368,7 @@ export async function callTool(
         timeoutMs: num(args, 'timeout_ms'),
       });
       const cursor = events.length > 0 ? events[events.length - 1]!.seq : (num(args, 'after_seq') ?? 0);
+      session.cursor = cursor;
       return {
         guidance:
           events.length === 0
@@ -396,13 +404,16 @@ export async function callTool(
       const holders = grant.conflicts
         .map((claim) => describeClaim(claim, names.get(claim.participantId)))
         .join('; ');
-      const soonest = Math.min(...grant.conflicts.map((claim) => claim.expiresAt));
+      // The scope frees when the LAST conflicting lease ends, not the first —
+      // promising the earliest would send an agent back to be refused again.
+      const lastToExpire = Math.max(...grant.conflicts.map((claim) => claim.expiresAt));
       return {
         guidance:
           `Refused. ${holders}. Do not route around it.` +
           ` Talk to the holder with post_message, claim a different scope, or call wait_for_events` +
-          ` with after_seq=${quorum.latestSeq()} — you will be woken when the claim is released, and it expires by` +
-          ` ${new Date(soonest).toISOString()} on its own.`,
+          ` with after_seq=${session.cursor} — you will be woken when a claim is released.` +
+          ` Every claim in the way is gone by ${new Date(lastToExpire).toISOString()} at the latest;` +
+          ` retrying before then only works if a holder releases early, and the feed will tell you when one does.`,
         data: { granted: false, conflicts: grant.conflicts },
       };
     }
@@ -427,7 +438,7 @@ export async function callTool(
       return {
         guidance:
           `Released — anyone waiting on that scope has been woken.` +
-          ` Take your next claim with claim_scope, or call wait_for_events with after_seq=${quorum.latestSeq()} if you are done for now.`,
+          ` Take your next claim with claim_scope, or call wait_for_events with after_seq=${session.cursor} if you are done for now.`,
         data: { claim },
       };
     }

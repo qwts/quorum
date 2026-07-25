@@ -29,7 +29,9 @@ test('rooms carry their decision rule and messages read forward from a cursor', 
   assert.equal(room.decisionRule, 'unanimity');
   assert.equal(quorum.listRooms()[0]?.members, 1, 'the creator is a member');
 
-  assert.throws(() => quorum.postMessage({ room: 'platform', participantId: grace.id, body: 'hi' }), /join platform/);
+  // The room name is quoted at the throw site: participant text never reads
+  // as an instruction downstream.
+  assert.throws(() => quorum.postMessage({ room: 'platform', participantId: grace.id, body: 'hi' }), /join "platform"/);
 
   quorum.joinRoom({ room: 'platform', participantId: grace.id });
   const first = quorum.postMessage({ room: 'platform', participantId: ada.id, body: 'starting on the parser' });

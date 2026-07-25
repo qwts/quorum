@@ -47,4 +47,7 @@ product, and no skill or doc here may tell an agent otherwise. Concretely:
 server-authored guidance may steer the agent; participant-authored text
 appears in it only through `quoted()`, which flattens and bounds it so it
 cannot pose as a directive. Never interpolate a participant's words into
-guidance any other way.
+guidance any other way — including through an error message. Domain errors
+JSON-quote the values they embed, and the MCP layer renders a failure as
+server-authored guidance followed by the error as data, never as a line above
+the guidance.

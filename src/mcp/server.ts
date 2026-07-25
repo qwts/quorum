@@ -16,7 +16,7 @@ import { callTool, TOOLS, type Session } from './tools.ts';
 export const MCP_PATH = '/mcp';
 
 function mcpServerFor(quorum: Quorum): Server {
-  const session: Session = { participantId: null };
+  const session: Session = { participantId: null, cursor: 0 };
   const server = new Server(
     { name: 'quorum', version: '0.0.0' },
     // Delivered in the initialize result, so every client — any harness —
@@ -40,14 +40,21 @@ function mcpServerFor(quorum: Quorum): Server {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return {
-        // Even a failure names the way back into the loop rather than
-        // leaving the agent to invent one.
+        // Same shape as success: server-authored guidance, then data. An error
+        // message can carry participant text (a room name, a purpose), so it
+        // is a JSON *value* below the guidance rather than a line above it —
+        // JSON escaping means a crafted name cannot break out and pose as the
+        // next instruction.
         content: [
           {
             type: 'text' as const,
-            text: `${message}\n\nFix the call and try again. If you are stuck, say so in a room with post_message rather than working around it.`,
+            text:
+              'That call failed; the error is below as data. Fix the call and try again — if you are stuck, ' +
+              'say so in a room with post_message rather than working around it.\n\n' +
+              JSON.stringify({ error: message }, null, 2),
           },
         ],
+        structuredContent: { error: message },
         isError: true,
       };
     }
