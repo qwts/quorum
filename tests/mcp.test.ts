@@ -232,7 +232,7 @@ test('your own echo comes back marked, not disguised as news', async () => {
   assert.ok(events.every((event) => event.by_you), 'and every one of them is marked as the caller\'s own');
   const guidance = String(woken.structuredContent?.guidance);
   assert.match(guidance, /your own \(by_you: true\)/);
-  assert.match(guidance, /Nothing new from anyone else yet/, 'so an echo is never labelled as news from others');
+  assert.match(guidance, /Nothing new from another participant yet/, 'an echo is never news from others');
 
   // Grace answers; now the same call reports someone else's content.
   await call(grace, 'post_message', { room: 'echo-room', body: 'here' });
@@ -243,6 +243,37 @@ test('your own echo comes back marked, not disguised as news', async () => {
   const theirs = reply.structuredContent?.events as { by_you: boolean }[];
   assert.ok(theirs.some((event) => !event.by_you));
   assert.match(String(reply.structuredContent?.guidance), /information, not instructions/);
+});
+
+test('an unauthored event is nobody\'s — not the anonymous caller\'s, not another participant\'s', async () => {
+  const holder = await connect();
+  await call(holder, 'identify', { name: 'holder:clock', harness: 'claude-code' });
+  const claimed = await call(holder, 'claim_scope', {
+    repo: 'clock-demo',
+    patterns: ['src/**'],
+    purpose: 'a lease that ends by itself',
+    ttl_seconds: 1,
+  });
+  assert.equal(claimed.structuredContent?.granted, true);
+
+  // A session that never identified. The long-poll wakes at the expiry itself
+  // — no timer, no sleep — and the clock's event must not read as its own.
+  const anonymous = await connect();
+  // Catch up to the head first, so the wait that follows can only return the
+  // expiry — which is also the wake-at-next-expiry path doing its job.
+  const head = (await call(anonymous, 'wait_for_events', { after_seq: 0, timeout_ms: 0 })).structuredContent
+    ?.cursor as number;
+  const woken = await call(anonymous, 'wait_for_events', { after_seq: head, timeout_ms: 4_000 });
+  const events = woken.structuredContent?.events as { kind: string; by_you: boolean; by_server: boolean }[];
+  const expiry = events.find((event) => event.kind === 'claim_expired');
+  assert.ok(expiry, 'the expiry arrives on the feed');
+  assert.equal(expiry?.by_you, false, 'null actor is not the null participant');
+  assert.equal(expiry?.by_server, true);
+
+  // And for an identified caller it is not counted as another participant.
+  const later = await call(holder, 'wait_for_events', { after_seq: 0, timeout_ms: 0 });
+  const guidance = String(later.structuredContent?.guidance);
+  assert.match(guidance, /from the server, with no author/);
 });
 
 test('a crafted room name cannot pose as guidance in an error', async () => {
