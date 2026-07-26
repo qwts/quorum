@@ -13,11 +13,24 @@
 
 import { readFileSync } from 'node:fs';
 import { createSecureContext } from 'node:tls';
+import { X509Certificate } from 'node:crypto';
 
 export interface TlsMaterial {
   cert: Buffer;
   key: Buffer;
   passphrase?: string;
+}
+
+/**
+ * A passphrase from a file, with only a trailing line ending removed.
+ *
+ * Never trimmed. A passphrase may legitimately begin or end with a space, and
+ * trimming corrupts the secret and then reports it as the *wrong* passphrase —
+ * a failure that looks like the operator mistyped something they did not, and
+ * that no amount of retyping fixes.
+ */
+export function readPassphrase(file: string): string {
+  return readFileSync(file, 'utf8').replace(/\r?\n$/, '');
 }
 
 /**
@@ -40,9 +53,7 @@ export function loadTls(env: NodeJS.ProcessEnv = process.env): TlsMaterial | nul
   }
 
   const passphraseFile = env.QUORUM_TLS_PASSPHRASE_FILE;
-  const passphrase = passphraseFile
-    ? readFileSync(passphraseFile, 'utf8').trim()
-    : env.QUORUM_TLS_PASSPHRASE;
+  const passphrase = passphraseFile ? readPassphrase(passphraseFile) : env.QUORUM_TLS_PASSPHRASE;
 
   const material: TlsMaterial = {
     cert: readFileSync(certPath),
@@ -73,4 +84,25 @@ export function explainTlsFailure(error: unknown): string {
     return `a TLS file is missing: ${message}`;
   }
   return message;
+}
+
+/**
+ * The hostname a certificate is actually for.
+ *
+ * Printing `https://127.0.0.1:4242` while serving a certificate issued for a
+ * name produces URLs that fail verification — the one thing this whole feature
+ * exists to avoid, in the copy the operator is most likely to paste. The
+ * certificate already knows its own name, so it is read rather than asked for.
+ *
+ * Returns null when the certificate names nothing usable, in which case the
+ * caller keeps whatever it was going to print.
+ */
+export function certificateHost(cert: Buffer): string | null {
+  try {
+    const san = new X509Certificate(cert).subjectAltName;
+    const dns = san?.split(',').map((part) => part.trim()).find((part) => part.startsWith('DNS:'));
+    return dns ? dns.slice('DNS:'.length) : null;
+  } catch {
+    return null;
+  }
 }

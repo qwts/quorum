@@ -12,13 +12,17 @@
 // QUORUM_TLS_CERT / QUORUM_TLS_KEY / QUORUM_TLS_PASSPHRASE_FILE
 //             optional TLS, for reaching this server by a hostname. Loopback
 //             is already a secure context and needs none of it.
+// QUORUM_PUBLIC_HOST
+//             the hostname to print in the URLs below. Defaults to the name
+//             on the certificate when TLS is on, so it rarely needs setting;
+//             it does not affect what the server binds to.
 
 import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { openQuorum } from './domain/quorum.ts';
-import { explainTlsFailure, loadTls } from './http/tls.ts';
+import { certificateHost, explainTlsFailure, loadTls } from './http/tls.ts';
 import { MCP_PATH, startServer } from './mcp/server.ts';
 import { checkDesignDrift } from './ui/drift.ts';
 import { UI_PATH } from './ui/serve.ts';
@@ -45,11 +49,17 @@ const server = await startServer({
   tls,
 });
 
-// The certificate names a host; the bind address does not have to be it, and
-// reaching the server by the wrong one is a certificate warning rather than a
-// failure anyone can read. QUORUM_PUBLIC_HOST is what gets printed.
+// What to print. The bind address is not necessarily reachable by the name on
+// the certificate, and printing the address while serving a certificate for a
+// name yields URLs that fail verification — in exactly the lines someone
+// copies. So the certificate is asked what it is for, and the variable is an
+// override rather than a requirement.
 const scheme = tls ? 'https' : 'http';
-const shown = process.env.QUORUM_PUBLIC_HOST ?? process.env.QUORUM_HOST ?? '127.0.0.1';
+const shown =
+  process.env.QUORUM_PUBLIC_HOST ??
+  (tls ? certificateHost(tls.cert) : null) ??
+  process.env.QUORUM_HOST ??
+  '127.0.0.1';
 const origin = `${scheme}://${shown}:${server.port}`;
 const url = `${origin}${MCP_PATH}`;
 process.stdout.write(`quorum listening on ${url} (db: ${dbPath})\n`);
