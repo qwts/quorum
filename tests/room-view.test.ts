@@ -1,0 +1,126 @@
+// The room view's model and its strings, in Node with no browser.
+//
+// This is why `store.js` and `format.js` are pure and why the composition root
+// is thin: the rules worth testing are all in here, and none of them needs a
+// DOM. What is left in `room.js` is wiring, which a screenshot checks better
+// than an assertion would.
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import { apply, applyAll, emptyState, liveClaims, messagesIn, roomByName, seed } from '../src/ui/kit/app/store.js';
+import { clock, count, remaining, scopeOf } from '../src/ui/kit/app/format.js';
+
+const ROOM = { id: 'r1', name: 'protocol', topic: 'the wire contract', decisionRule: 'majority', members: 2 };
+const CODEX = { id: 'p1', name: 'codex:api', harness: 'codex', repo: null, branch: null };
+const DANA = { id: 'p2', name: 'Dana', harness: 'human', repo: null, branch: null };
+
+const event = (seq: number, kind: string, payload: unknown, roomId: string | null = null) => ({
+  seq,
+  kind,
+  roomId,
+  actorId: null,
+  payload,
+  createdAt: 0,
+});
+
+function painted() {
+  return seed(emptyState(), {
+    seq: 10,
+    rooms: [ROOM],
+    participants: [CODEX, DANA],
+    claims: [],
+    messages: [{ id: 1, roomId: 'r1', participantId: 'p1', body: 'first', deliberationId: null, createdAt: 0 }],
+  });
+}
+
+test('the model is a fold over the feed, and folding is idempotent', () => {
+  const state = painted();
+  assert.equal(state.seq, 10);
+  assert.equal(messagesIn(state, 'r1').length, 1);
+
+  const message = { id: 2, roomId: 'r1', participantId: 'p2', body: 'second', deliberationId: null, createdAt: 0 };
+  const once = apply(state, event(11, 'message', { message, from: 'Dana' }, 'r1'));
+  assert.equal(messagesIn(once, 'r1').length, 2);
+
+  // The API stamps its seq *before* its read, so an event that landed in
+  // between arrives twice on purpose. Replay must therefore change nothing,
+  // or that trade would be paid for in duplicate rows on screen.
+  const twice = apply(once, event(11, 'message', { message, from: 'Dana' }, 'r1'));
+  assert.equal(messagesIn(twice, 'r1').length, 2);
+  assert.equal(twice, once, 'a stale event returns the same state, so a renderer can skip on identity');
+});
+
+test('an event kind the page has not learned advances the cursor and changes nothing', () => {
+  // A server that grows an event must not break a page running older code —
+  // the page is served from the same process, but a browser tab open across a
+  // restart is exactly that situation.
+  const state = painted();
+  const next = apply(state, event(11, 'some_future_event', { whatever: true }));
+  assert.equal(next.seq, 11, 'the page has seen it; it just had nothing to do about it');
+  assert.deepEqual(messagesIn(next, 'r1'), messagesIn(state, 'r1'));
+  assert.equal(next.rooms, state.rooms, 'untouched maps are not copied');
+});
+
+test('folding never mutates what the caller was holding', () => {
+  const before = painted();
+  const rooms = before.rooms;
+  const after = applyAll(before, [
+    event(11, 'room_joined', { room: ROOM, participant: DANA }),
+    event(12, 'claim_granted', {
+      claim: { id: 'c1', participantId: 'p1', repo: 'quorum', branch: 'main', patterns: ['src/mcp/**'], purpose: 'schema pass', expiresAt: 5_000 },
+    }),
+  ]);
+
+  assert.equal(before.rooms, rooms, 'the previous state is still the previous state');
+  assert.equal(before.claims.size, 0);
+  assert.equal(after.claims.size, 1);
+  assert.equal(after.rooms.get('r1')!.members, 3);
+});
+
+test('a released or expired claim leaves the roster', () => {
+  const claim = { id: 'c1', participantId: 'p1', repo: 'quorum', patterns: ['src/**'], purpose: 'x', expiresAt: 5_000 };
+  const held = apply(painted(), event(11, 'claim_granted', { claim }));
+  assert.equal(liveClaims(held, 0).length, 1);
+
+  assert.equal(liveClaims(apply(held, event(12, 'claim_released', { claim })), 0).length, 0);
+  assert.equal(liveClaims(apply(held, event(12, 'claim_expired', { claim })), 0).length, 0);
+
+  // Expiry is a clock fact, not only an event: a lease whose time has passed
+  // is gone whether or not the sweep has run yet.
+  assert.equal(liveClaims(held, 6_000).length, 0);
+});
+
+test('claims sort by who frees up first', () => {
+  const at = (id: string, expiresAt: number) => ({ id, participantId: 'p1', repo: 'q', patterns: [], purpose: '', expiresAt });
+  const state = applyAll(painted(), [
+    event(11, 'claim_granted', { claim: at('late', 9_000) }),
+    event(12, 'claim_granted', { claim: at('soon', 2_000) }),
+  ]);
+  assert.deepEqual(
+    liveClaims(state, 0).map((c) => c.id),
+    ['soon', 'late'],
+    'whoever is waiting on a scope reads the one about to free up first',
+  );
+});
+
+test('rooms are found by the name a human types, not the id', () => {
+  assert.equal(roomByName(painted(), 'protocol')?.id, 'r1');
+  assert.equal(roomByName(painted(), 'nope'), undefined);
+});
+
+test('numbers are exact, because rounding them together hides the difference', () => {
+  assert.equal(remaining(90_000, 0), '1m left');
+  // Under a minute is exactly when a waiting agent needs the real number.
+  assert.equal(remaining(45_000, 0), '45s left');
+  assert.equal(remaining(0, 1), 'expired');
+
+  assert.equal(count(1, 'participant'), '1 participant');
+  assert.equal(count(0, 'participant'), '0 participants');
+
+  assert.equal(scopeOf({ repo: 'quorum', branch: 'main', patterns: ['src/mcp/**'] }), 'quorum@main src/mcp/**');
+  assert.equal(scopeOf({ repo: 'quorum', patterns: [] }), 'quorum the whole repository');
+
+  const noon = new Date(2026, 6, 25, 9, 5).getTime();
+  assert.equal(clock(noon), '09:05', 'zero-padded, so a column of times lines up');
+});
