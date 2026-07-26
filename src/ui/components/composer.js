@@ -19,6 +19,7 @@
 // The protocol rules below are the design system's, not this file's.
 
 import { QuorumElement, define, h } from '../lib/element.js';
+import { sendsOnEnter } from '../lib/keys.js';
 import { composerHint, phaseColor } from '../lib/phase.js';
 
 export class Composer extends QuorumElement {
@@ -59,8 +60,11 @@ export class Composer extends QuorumElement {
     :host([phase]) .box { border-top: var(--border-width-accent) solid var(--tone); }
     :host([disabled]) .box { border-color: var(--line-1); background: var(--surface-panel); opacity: 0.85; }
 
+    /* border-box, or width:100% measures the content and the padding pushes the
+       field past .box, whose overflow is hidden — clipping the right edge and
+       the end of every long line, in any rail narrower than the measure. */
     textarea {
-      width: 100%; display: block; resize: none; border: none; outline: none;
+      width: 100%; box-sizing: border-box; display: block; resize: none; border: none; outline: none;
       background: transparent; color: var(--fg-1); font: var(--type-body);
       max-width: var(--measure-message); padding: var(--sp-5) var(--sp-5) var(--sp-3);
     }
@@ -90,9 +94,10 @@ export class Composer extends QuorumElement {
   #field = /** @type {HTMLTextAreaElement} */ (h('textarea', {
     oninput: () => this.#sync(),
     onkeydown: (/** @type {Event} */ event) => {
-      const key = /** @type {KeyboardEvent} */ (event);
-      if (key.key !== 'Enter' || key.shiftKey) return;
-      key.preventDefault();
+      // Only prevented when it actually sends: a newline and an IME confirming
+      // a candidate both need the keystroke to reach the field.
+      if (!sendsOnEnter(/** @type {KeyboardEvent} */ (event))) return;
+      event.preventDefault();
       this.#submit();
     },
   }));

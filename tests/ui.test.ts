@@ -17,6 +17,7 @@ import { IncomingMessage, ServerResponse } from 'node:http';
 import { checkDesignDrift, designVersion } from '../src/ui/drift.ts';
 // A browser module, imported in Node on purpose: the phase rules are pure, so
 // they are testable without a browser, and the one below is worth testing.
+import { sendsOnEnter } from '../src/ui/lib/keys.js';
 import { composerHint, optionChipProps } from '../src/ui/lib/phase.js';
 import { serveUi } from '../src/ui/serve.ts';
 
@@ -232,4 +233,26 @@ test('a disabled composer always says why, even when the screen forgets', () => 
   // Disabled outranks everything: a keyboard hint beside a field you cannot
   // type into is an instruction that does not work.
   assert.equal(composerHint({ disabled: true, hint: 'Enter to send', phase: 'challenging' }), forgotten);
+});
+
+test('Enter sends, except when an input method editor is using it', () => {
+  assert.equal(sendsOnEnter({ key: 'Enter' }), true);
+
+  // Shift+Enter is a newline, and any other key is not this rule's business.
+  assert.equal(sendsOnEnter({ key: 'Enter', shiftKey: true }), false);
+  assert.equal(sendsOnEnter({ key: 'a' }), false);
+
+  // The one that is invisible to anyone testing in English: typing Japanese,
+  // Chinese or Korean, Enter accepts the candidate the IME is offering. It is
+  // part of writing the word. Sending there would post a half-composed
+  // sentence into a room, permanently, for exactly the participants who have
+  // no other way to type.
+  assert.equal(sendsOnEnter({ key: 'Enter', isComposing: true }), false);
+
+  // What browsers reported before `isComposing` existed, and what some still
+  // report for the same keystroke.
+  assert.equal(sendsOnEnter({ key: 'Enter', keyCode: 229 }), false);
+
+  // Once the composition is confirmed, Enter means Enter again.
+  assert.equal(sendsOnEnter({ key: 'Enter', isComposing: false, keyCode: 13 }), true);
 });

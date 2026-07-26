@@ -19,6 +19,7 @@ import './components/composer.js';
 
 export { h, meta, QuorumElement } from './lib/element.js';
 export { HUMAN_HUE, identityHue, participantHue, resetIdentityHues } from './lib/identity.js';
+export { sendsOnEnter } from './lib/keys.js';
 export { FAILED, LIVE_PHASES, PHASES, composerHint, isTerminal, optionChipProps, phaseColor, phaseStep, phaseTint } from './lib/phase.js';
 
 export { IdentityChip } from './components/identity-chip.js';
