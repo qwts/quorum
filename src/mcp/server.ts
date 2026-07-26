@@ -5,6 +5,7 @@
 // stale. The HTTP layer here is node:http — no framework, one dependency.
 
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from 'node:http';
+import { createServer as createSecureServer } from 'node:https';
 import { randomUUID } from 'node:crypto';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -12,6 +13,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import type { Quorum } from '../domain/quorum.ts';
 import { serveApi } from '../http/api.ts';
 import { serveWrites } from '../http/write.ts';
+import { loadTls, type TlsMaterial } from '../http/tls.ts';
 import { closeEventStreams, serveEvents } from '../http/events.ts';
 import { serveUi } from '../ui/serve.ts';
 import { PARTICIPANT_CONTRACT } from './contract.ts';
@@ -80,15 +82,22 @@ export async function startServer(options: {
   quorum: Quorum;
   port?: number;
   host?: string;
+  /** TLS material, or undefined to read it from the environment. Null forces plain HTTP. */
+  tls?: TlsMaterial | null;
 }): Promise<QuorumHttpServer> {
   const transports = new Map<string, StreamableHTTPServerTransport>();
 
-  const http = createServer((req: IncomingMessage, res: ServerResponse) => {
+  const onRequest = (req: IncomingMessage, res: ServerResponse) => {
     void handle(req, res).catch((error: unknown) => {
       if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
     });
-  });
+  };
+
+  // TLS is for reaching this server by a hostname; loopback is already a
+  // secure context without it. Configured or not, the request path is the same.
+  const tls = options.tls === undefined ? loadTls() : options.tls;
+  const http = tls ? createSecureServer(tls, onRequest) : createServer(onRequest);
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://localhost');

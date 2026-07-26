@@ -10,7 +10,8 @@
   "scripts": {
     "start": "node src/index.ts",
     "test": "node --test tests/*.test.ts",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p src/ui"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p src/ui",
+    "dev:tls": "sh scripts/dev-tls.sh"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0"
