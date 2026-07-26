@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 
 import { openQuorum } from '../src/domain/quorum.ts';
 import { startServer } from '../src/mcp/server.ts';
+import { allowedHosts, refuseWrite } from '../src/http/origin.ts';
 
 const quorum = openQuorum();
 const server = await startServer({ quorum });
@@ -386,4 +387,53 @@ test('a malformed or unknown write is refused, not half-accepted', async () => {
 
   const put = await fetch(`${origin}/api/rooms`, { method: 'PUT', headers: { 'content-type': 'application/json' } });
   assert.equal(put.status, 405);
+});
+
+test('a rebound hostname is refused however well its headers agree', () => {
+  // The attack the previous check could not see. An attacker whose domain
+  // resolves to 127.0.0.1 controls *both* headers, so they agree perfectly —
+  // and agreement was the whole test. Only a name the server was told to
+  // answer to is accepted.
+  const hosts = allowedHosts({} as NodeJS.ProcessEnv);
+  const headers = (h: Record<string, string>) => ({ headers: h }) as any;
+
+  const rebound = refuseWrite(
+    headers({ host: 'evil.example:4242', origin: 'http://evil.example:4242', 'content-type': 'application/json' }),
+    hosts,
+  );
+  assert.match(rebound!, /does not answer to that hostname/);
+
+  // Loopback still works, by name and by address, with and without a port.
+  for (const host of ['127.0.0.1:4242', 'localhost:4242', '[::1]:4242', 'localhost']) {
+    assert.equal(refuseWrite(headers({ host, 'content-type': 'application/json' }), hosts), null, host);
+  }
+
+  // A page on an allowed host cannot reach it from a disallowed origin.
+  assert.match(
+    refuseWrite(
+      headers({ host: '127.0.0.1:4242', origin: 'https://evil.example', 'content-type': 'application/json' }),
+      hosts,
+    )!,
+    /cross-origin/,
+  );
+
+  // A local dev hostname is added by configuration, never inferred.
+  const configured = allowedHosts({ QUORUM_HOSTS: 'quorum.local.example.com' } as NodeJS.ProcessEnv);
+  const dev = { host: 'quorum.local.example.com', origin: 'https://quorum.local.example.com', 'content-type': 'application/json' };
+  assert.match(refuseWrite(headers(dev), hosts)!, /does not answer/);
+  assert.equal(refuseWrite(headers(dev), configured), null);
+});
+
+test('a malformed path is a bad request, not a server fault', async () => {
+  // `decodeURIComponent('%')` throws URIError, which is not a domain error, so
+  // it escaped as a 500 carrying an internal message. The server survived it —
+  // the top-level handler catches — but answering a bad request with "500: URI
+  // malformed" tells the caller the server broke when the caller did.
+  const bad = await post('/api/rooms/%/join', { participantId: 'whoever' });
+  assert.equal(bad.status, 409);
+  assert.match(bad.body.error, /not a valid name/);
+  assert.ok(!/URI malformed/.test(bad.body.error), 'no internal error text reaches the caller');
+
+  // Still serving afterwards.
+  assert.equal((await get('/api/rooms')).status, 200);
 });

@@ -9,27 +9,12 @@
 // write path, so a human and an agent are held to the same protocol. A human
 // who posts without joining is refused in exactly the words an agent gets.
 //
-// ## Why a localhost server needs to care about the origin
-//
-// This process listens on 127.0.0.1 with no auth, which is fine while it only
-// reads. The moment it writes, every page the human visits can reach it: a
-// script on any site can `fetch('http://127.0.0.1:4242/api/…', {method:'POST'})`
-// and post messages, cast ballots, or convene deliberations in their name. The
-// response is opaque to the attacker, but the write has already happened, and
-// this transport's whole product is a record of who said what.
-//
-// Two checks close it, and both are needed:
-//
-//   * **Origin.** Browsers always send it on a POST and a page cannot forge
-//     it. An origin that is present and not ours is refused. Absent means a
-//     non-browser client (curl, the tests), which is not the threat.
-//   * **Content type.** `application/json` is not a "simple request", so a
-//     cross-origin attempt is preflighted — and we answer no preflight, so it
-//     never happens. Without this check an attacker drops to `text/plain`,
-//     which *is* simple, and skips the preflight entirely.
+// The browser guard that lets any of this be safe lives beside it, in
+// origin.ts — the reasoning is long enough to deserve reading on its own.
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { QuorumError } from '../domain/errors.ts';
+import { refuseWrite } from './origin.ts';
 import type { Quorum } from '../domain/quorum.ts';
 
 const API_PREFIX = '/api/';
@@ -43,30 +28,6 @@ const HUMAN = 'human';
 function send(res: ServerResponse, status: number, body: Record<string, unknown>): void {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
   res.end(JSON.stringify(body, null, 2));
-}
-
-/**
- * Whether this request may write.
- *
- * Returns the refusal to send, or null when it is allowed. Stated as data so
- * the reason reaches the caller instead of becoming a bare 403.
- */
-export function refuseWrite(req: IncomingMessage): string | null {
-  const origin = req.headers.origin;
-  if (typeof origin === 'string' && origin !== '' && origin !== 'null') {
-    const host = req.headers.host;
-    // Compare the whole origin, not a suffix: `http://127.0.0.1:4242.evil.com`
-    // ends with our host and is not us.
-    if (!host || (origin !== `http://${host}` && origin !== `https://${host}`)) {
-      return 'cross-origin writes are refused; open the UI this server serves';
-    }
-  }
-
-  const type = (req.headers['content-type'] ?? '').split(';')[0]!.trim().toLowerCase();
-  if (type !== 'application/json') {
-    return 'writes must be application/json';
-  }
-  return null;
 }
 
 /** Read a JSON body, bounded. Rejects rather than buffering whatever arrives. */
@@ -88,6 +49,21 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
   } catch (error) {
     if (error instanceof QuorumError) throw error;
     throw new QuorumError('request body is not valid JSON');
+  }
+}
+
+/**
+ * Decode a path segment, refusing a malformed escape instead of throwing.
+ *
+ * `decodeURIComponent` throws `URIError` on something like `/api/rooms/%/join`.
+ * That is not a domain error, so it escaped the handler here and surfaced as a
+ * 500 carrying an internal message — a bad request answered as a server fault.
+ */
+function segment(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    throw new QuorumError('that path is not a valid name');
   }
 }
 
@@ -169,7 +145,7 @@ function dispatch(
   if (join) {
     return {
       room: quorum.joinRoom({
-        room: decodeURIComponent(join[1]!),
+        room: segment(join[1]!),
         participantId: str(body, 'participantId'),
       }),
     };
@@ -179,7 +155,7 @@ function dispatch(
   if (post) {
     return {
       message: quorum.postMessage({
-        room: decodeURIComponent(post[1]!),
+        room: segment(post[1]!),
         participantId: str(body, 'participantId'),
         body: str(body, 'body'),
         deliberationId: typeof body.deliberationId === 'string' ? body.deliberationId : undefined,
@@ -195,7 +171,7 @@ function dispatch(
     }
     return {
       deliberation: quorum.propose({
-        room: decodeURIComponent(propose[1]!),
+        room: segment(propose[1]!),
         participantId: str(body, 'participantId'),
         question: str(body, 'question'),
         options: options as string[],
@@ -210,7 +186,7 @@ function dispatch(
       throw new QuorumError('choice is the option index, as an integer');
     }
     return quorum.vote({
-      deliberationId: decodeURIComponent(vote[1]!),
+      deliberationId: segment(vote[1]!),
       participantId: str(body, 'participantId'),
       choice,
       dissent: typeof body.dissent === 'string' ? body.dissent : undefined,
