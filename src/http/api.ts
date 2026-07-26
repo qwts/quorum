@@ -37,6 +37,31 @@ function positiveInt(value: string | null, fallback: number): number {
 }
 
 /**
+ * The most recent `limit` messages, not the oldest.
+ *
+ * The domain reads forward from an id, so asking it once for 100 in a room
+ * with 300 gives you messages 1–100 — and the stream then tails from the head,
+ * so 101–300 are never painted and never replayed. A permanent, silent hole in
+ * the middle of the room, which is the worst shape a bug can have here.
+ *
+ * Paging forward to the tail is O(messages) and honest. The efficient fix is a
+ * tail query in the domain, which is another lane's file (docs/deliberation.md
+ * §8 seams); a claim is a coordination signal, so this stays on our side of it
+ * and the cost is a note rather than a reach across.
+ */
+function recentMessages(quorum: Quorum, room: string, limit: number): unknown[] {
+  const page = Math.max(limit, 200);
+  let all: any[] = [];
+  for (;;) {
+    const batch = quorum.readMessages({ room, afterId: all.at(-1)?.id, limit: page });
+    if (batch.length === 0) break;
+    all = all.concat(batch);
+    if (batch.length < page) break;
+  }
+  return all.slice(-limit);
+}
+
+/**
  * Handle a read request. Returns false when the path is not ours, so the
  * caller keeps ownership of what a 404 means.
  */
@@ -81,14 +106,16 @@ export function serveApi(req: IncomingMessage, res: ServerResponse, url: URL, qu
     const messages = /^rooms\/([^/]+)\/messages$/.exec(route);
     if (messages) {
       const room = decodeURIComponent(messages[1]!);
+      // With `after`, the caller is walking forward and knows where it is.
+      // Without it, this is a first paint and wants the end of the room.
+      const after = positiveInt(url.searchParams.get('after'), 0) || undefined;
+      const limit = positiveInt(url.searchParams.get('limit'), 100);
       send(res, 200, {
         seq,
         room,
-        messages: quorum.readMessages({
-          room,
-          afterId: positiveInt(url.searchParams.get('after'), 0) || undefined,
-          limit: positiveInt(url.searchParams.get('limit'), 100),
-        }),
+        messages: after
+          ? quorum.readMessages({ room, afterId: after, limit })
+          : recentMessages(quorum, room, limit),
       });
       return true;
     }

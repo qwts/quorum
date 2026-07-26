@@ -154,3 +154,19 @@ library implements the two-value union and records the delta as `D-1` in
   the screenshot. Worth a line in the `.d.ts` either way, since the next porter
   meets the same fork.
 - **Blocking?** no.
+
+### Q11 — No breakpoint token, and no way to derive one
+- **Where:** `src/ui/kit/room.html`, a "this window is too narrow" notice.
+- **What I needed:** the width below which the fixed rails stop fitting.
+- **Why the system does not answer it:** the design is explicit that the rails
+  are fixed and never reflow (requirements §1.3), so it defines no breakpoint —
+  correctly, since there is no responsive layout to define one for. The
+  *derived* number would be `--rail-nav + --rail-sidebar + --rail-roster`, the
+  width at which the stream reaches zero, but a CSS media query cannot read
+  custom properties, so it cannot be expressed without writing a literal.
+- **What I did instead:** shipped no breakpoint at all. A narrow window gets a
+  horizontal scrollbar, which is what "never reflowed" means. The library's own
+  adherence test caught the literal I had written first, which is the check
+  working.
+- **Blocking?** no. If a minimum-width notice is wanted, it needs a designed
+  value or a licence to hardcode the derived one.

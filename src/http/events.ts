@@ -16,6 +16,15 @@
 // An observer is not a participant. The stream passes `participantId: null`,
 // so watching a room advances nobody's durable cursor — a human reading over
 // someone's shoulder must not mark their messages as delivered.
+//
+// Domain events are sent under SSE's default `message` name, with the kind in
+// the payload where the client's fold already looks for it. Naming each frame
+// after its kind looked tidier and was a bug: `EventSource` delivers a named
+// frame only to a listener registered for that exact name, so a kind the page
+// had not been taught would never arrive at all — and the client fold is
+// specifically built to receive unknown kinds and advance past them. The
+// transport's own frames (`cursor`, `stream_error`) keep their names, because
+// those are about the stream rather than about the room.
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Quorum } from '../domain/quorum.ts';
@@ -47,9 +56,15 @@ export function closeEventStreams(): void {
   LIVE.clear();
 }
 
+/** A transport frame — named, because a client subscribes to these by name. */
 function frame(id: number, event: string, data: unknown): string {
   // `data:` must not contain a raw newline, and JSON.stringify never emits one.
   return `id: ${id}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+/** A domain event — unnamed, so one listener receives every kind, including future ones. */
+function domainFrame(event: { seq: number }): string {
+  return `id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`;
 }
 
 /** A seq from a header or query value, or null when it is absent or not a number. */
@@ -140,7 +155,7 @@ export function serveEvents(req: IncomingMessage, res: ServerResponse, url: URL,
       idleMs = 0;
       for (const event of batch) {
         cursor = event.seq;
-        res.write(frame(event.seq, event.kind, event));
+        res.write(domainFrame(event));
       }
     }
     stop();

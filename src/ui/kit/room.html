@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>quorum</title>
+    <link rel="stylesheet" href="../styles.css" />
+    <script type="module" src="../index.js"></script>
+    <style>
+      /* Fixed desktop rails, never reflowed (requirements §1.3). Every value is
+         a token — a literal here is a check failure, not a matter of taste. */
+      /* Vertical only. `overflow: hidden` would clip the fixed rails in a
+         narrow window and make the right of the page unreachable — which is
+         not "never reflowed", it is "never reachable". */
+      body { height: 100vh; overflow-y: hidden; overflow-x: auto; }
+      .app { display: flex; height: 100vh; }
+
+      .rail { width: var(--rail-nav); flex: 0 0 auto; border-right: var(--border-width) solid var(--line-1); display: flex; flex-direction: column; align-items: center; padding-top: var(--sp-5); gap: var(--sp-5); }
+      .mark { font: var(--type-heading); letter-spacing: var(--ls-tight); }
+      .mark b { color: var(--brass-500); font-weight: inherit; }
+
+      .side { width: var(--rail-sidebar); flex: 0 0 auto; border-right: var(--border-width) solid var(--line-1); display: flex; flex-direction: column; }
+      .brand { padding: var(--sp-5); }
+      .brand .wordmark { font: var(--fw-semibold) var(--fs-17)/var(--lh-snug) var(--font-sans); letter-spacing: var(--ls-tight); }
+      .brand .wordmark b { color: var(--brass-500); font-weight: inherit; }
+      .brand .where { font: var(--type-mono); color: var(--text-faint); margin-top: var(--sp-1); }
+      .group-label { font: var(--type-label); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--text-faint); padding: 0 var(--sp-5) var(--sp-3); }
+
+      main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+      .head { height: var(--header-h); flex: 0 0 auto; border-bottom: var(--border-width) solid var(--line-1); display: flex; align-items: center; padding: 0 var(--sp-7); }
+      .body { flex: 1 1 auto; min-height: 0; display: flex; }
+      .stream { flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: var(--sp-5) 0; }
+      .side-roster { width: var(--rail-roster); flex: 0 0 auto; border-left: var(--border-width) solid var(--line-1); overflow-y: auto; padding: var(--sp-5); }
+
+      /* Views own their internals; these are the classes they emit. */
+      .rooms { display: flex; flex-direction: column; }
+      .room { appearance: none; background: none; border: none; border-left: var(--border-width-accent) solid transparent; color: var(--text-muted); font: var(--type-body); text-align: left; display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-5); cursor: pointer; transition: var(--transition-hover); }
+      .room:hover { background: var(--surface-hover); }
+      .room.open { border-left-color: var(--brass-500); background: var(--surface-selected); font: var(--type-body-strong); color: var(--text-body); }
+      .hash { color: var(--text-faint); }
+      .rule-tag { margin-left: auto; font: var(--type-label); letter-spacing: var(--ls-caps); color: var(--text-faint); }
+
+      .topbar { display: flex; align-items: center; gap: var(--sp-4); width: 100%; }
+      .topbar-room { font: var(--type-subheading); }
+      .topbar-topic { font: var(--type-meta); color: var(--text-meta); }
+      .topbar-right { margin-left: auto; display: flex; align-items: center; gap: var(--sp-5); }
+      .rule-pill { font: var(--type-mono); color: var(--text-meta); border: var(--border-width) solid var(--line-2); border-radius: var(--radius-pill); padding: var(--sp-1) var(--sp-4); white-space: nowrap; }
+      .feed { font: var(--type-label); letter-spacing: var(--ls-caps); text-transform: uppercase; }
+      .feed-live { color: var(--phase-converged); }
+      /* No pulse. Motion announces arrival and phase change, nothing else —
+         a connection label is neither, and the hue already says it. */
+      .feed-reconnecting { color: var(--phase-proposed); }
+
+      .stack-panel { display: flex; flex-direction: column; gap: var(--sp-7); }
+      .panel-section { display: flex; flex-direction: column; gap: var(--sp-4); }
+      .label { font: var(--type-label); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--text-faint); }
+      .chips { display: flex; flex-direction: column; gap: var(--sp-3); align-items: flex-start; }
+      .quiet { font: var(--type-mono); color: var(--text-faint); }
+      .claim { border-left: var(--border-width-accent) solid var(--line-strong); padding-left: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-2); margin-bottom: var(--sp-4); }
+      .claim-scope { font: var(--type-mono-strong); }
+      .claim-purpose { font: var(--type-mono); color: var(--text-meta); }
+      .claim-foot { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+      .empty { font: var(--type-body); color: var(--text-meta); padding: var(--sp-7); max-width: var(--measure-message); }
+
+      /* No breakpoint, deliberately. "Fixed desktop rails, never reflowed"
+         (requirements §1.3) means the page does not respond — a narrow window
+         gets a horizontal scrollbar, which is the honest outcome. A
+         too-narrow notice would need a width nobody designed, and a media
+         query cannot read a custom property, so it could not be derived from
+         the rails either. See QUESTIONS.md Q11. */
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <div class="rail">
+        <span class="mark">q<b>.</b></span>
+      </div>
+
+      <div class="side">
+        <div class="brand">
+          <div class="wordmark">quorum<b>.</b></div>
+          <div class="where">127.0.0.1 · local</div>
+        </div>
+        <div class="group-label">rooms</div>
+        <div id="sidebar"></div>
+      </div>
+
+      <main>
+        <div class="head" id="topbar"></div>
+        <div class="body">
+          <div class="stream" id="stream"></div>
+          <div class="side-roster" id="roster"></div>
+        </div>
+      </main>
+    </div>
+
+    <script type="module">
+      import { mountRoom } from './app/room.js';
+
+      // The room in the query string, so a link to a room is a link.
+      const room = new URLSearchParams(location.search).get('room') ?? 'protocol';
+      document.title = `#${room} · quorum`;
+
+      mountRoom({ room }).catch((error) => {
+        // Say what failed and what to do. Never a bare error, and never a
+        // spinner that waits forever on something that already gave up.
+        document.getElementById('stream').replaceChildren(
+          Object.assign(document.createElement('div'), {
+            className: 'empty',
+            textContent: `Could not open #${room}: ${error.message}. Check the server is running, then reload.`,
+          }),
+        );
+      });
+    </script>
+  </body>
+</html>
