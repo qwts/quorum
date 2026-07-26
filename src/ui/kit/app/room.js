@@ -12,9 +12,10 @@
 
 import { openFeed } from './feed.js';
 import { api, paintRoom } from './api.js';
-import { ensureIdentified, remembered } from './me.js';
+import { ensureIdentified, forget, isStaleIdentity, remembered } from './me.js';
 import { apply, applyAll, emptyState, roomByName, seed } from './store.js';
 import { composerProps } from './composer.js';
+import { createSender } from './posting.js';
 import { rosterView, sidebarView, streamView, topBarView } from './views.js';
 
 /**
@@ -48,6 +49,22 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
   // rebuilt from the model on each render, which is only safe because none of
   // them holds anything the person was in the middle of.
   const composer = /** @type {any} */ (doc.createElement('q-composer'));
+  const send = createSender({
+    room: () => openRoom,
+    me: () => me,
+    setMe: (who) => { me = who; },
+    draft: () => composer.value,
+    setDraft: (value) => { composer.value = value; },
+    setNotice: (message) => { notice = message; },
+    settled: () => render(),
+    // The browser's own prompt: the design system ships no dialog, and a
+    // screen inventing one is the thing this library exists to prevent.
+    identify: () => ensureIdentified({ ask: (message) => win.prompt(message), identify: api.identify }),
+    join: api.join,
+    post: api.post,
+    isStaleIdentity,
+    forget,
+  });
   composer.addEventListener('send', (/** @type {any} */ event) => void send(event.detail.value));
   regions.composer?.replaceChildren(composer);
 
@@ -128,36 +145,6 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
    *
    * @param {string} body
    */
-  async function send(body) {
-    notice = null;
-    try {
-      me = await ensureIdentified({
-        // The browser's own prompt: the design system ships no dialog, and a
-        // screen inventing one is the thing this library exists to prevent.
-        ask: (message) => win.prompt(message),
-        identify: api.identify,
-      });
-      if (!me) {
-        // Declining to be named is an answer, not an error. Say what it means
-        // and what would change it.
-        notice = 'Posting needs a name — agents attribute everything in the record. Send again to be asked.';
-        render();
-        return;
-      }
-      // Membership is the protocol's rule, not this screen's; joining is
-      // idempotent, so asking every time is cheaper than tracking it wrongly.
-      await api.join(openRoom, me.id);
-      await api.post(openRoom, me.id, body);
-      composer.value = '';
-      render();
-    } catch (error) {
-      // The server's refusals are written to be read. Shown as a private row,
-      // because it was returned to this person alone and is not a room event.
-      notice = error instanceof Error ? error.message : String(error);
-      render();
-    }
-  }
-
   /** Switching rooms repaints from the model — the feed is room-agnostic and keeps running. */
   const pick = (/** @type {string} */ name) => {
     if (name === openRoom) return;

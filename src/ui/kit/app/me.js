@@ -37,6 +37,30 @@ export function remembered() {
   }
 }
 
+/**
+ * Forget the remembered participant.
+ *
+ * The id is only meaningful to the database that issued it. Point the server
+ * at a different (or freshly deleted) one and this browser still holds a UUID
+ * that no longer names anybody — every write then fails identically, forever,
+ * with no way out of it short of clearing site data by hand.
+ */
+export function forget() {
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    /* nothing to forget if we could not remember */
+  }
+}
+
+/**
+ * Whether a refusal means the id we hold is not one the server knows.
+ * @param {string} message
+ */
+export function isStaleIdentity(message) {
+  return /unknown participant/i.test(message);
+}
+
 /** @param {{id: string, name: string}} who */
 function remember(who) {
   try {
