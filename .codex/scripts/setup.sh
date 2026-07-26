@@ -81,6 +81,13 @@ if [ "$node_ready" = true ]; then
   echo "==> Node: $(node --version)"
 fi
 
+# Configure the harness-neutral Agent ID and worktree-pinned App. Transcript
+# locators are optional provider metadata: tools that expose one bind it, while
+# tools without one retain a valid transcript-pending identity.
+if [ -f ".codex/scripts/ensure-identity.sh" ]; then
+  bash .codex/scripts/ensure-identity.sh
+fi
+
 # These tools improve the agent experience but are host prerequisites, not
 # project dependencies. Report them without mutating the host package manager.
 if [ -x "/bin/zsh" ]; then
