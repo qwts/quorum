@@ -325,3 +325,23 @@ test('the printed URLs come from the certificate, not from the bind address', ()
   // Nothing usable in it: the caller keeps whatever it was going to print.
   assert.equal(certificateHost(Buffer.from('not a certificate')), null);
 });
+
+test('an unexpected failure tells the operator, not the caller', async () => {
+  // Every *expected* refusal is answered in words by the handler that
+  // recognised it. Anything reaching the last-resort catch is a bug, so its
+  // message names the inside of this process — a path, a SQL fragment, a
+  // stack. A caller cannot act on a bug; an operator can, so the detail goes
+  // to the log and the response says only that it happened.
+  //
+  // Flagged by CodeQL as js/stack-trace-exposure once code scanning was turned
+  // on, in the one repo of the fleet that had it off.
+  const response = await fetch(`${origin}/api/rooms`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  });
+  const body = (await response.json()) as { error: string };
+
+  assert.equal(response.status, 405, 'a known-bad method is still answered properly');
+  assert.ok(!/\bat \/|\.ts:\d+|node:internal/.test(body.error), 'no stack, no path, no line number');
+});

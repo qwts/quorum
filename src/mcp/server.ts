@@ -89,8 +89,17 @@ export async function startServer(options: {
 
   const onRequest = (req: IncomingMessage, res: ServerResponse) => {
     void handle(req, res).catch((error: unknown) => {
+      // The last resort, reached only by a bug: every *expected* refusal is
+      // answered in words by the handler that recognised it.
+      //
+      // So whatever lands here is internal — a message naming a file path, a
+      // SQL fragment, or a stack. Returning it tells a caller about the inside
+      // of this process in exchange for nothing, since a caller cannot act on
+      // a bug anyway. It goes to the operator's log, where someone can, and
+      // the response says only that it happened.
+      process.stderr.write(`quorum: unhandled request error — ${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`);
       if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+      res.end(JSON.stringify({ error: 'the server failed to handle that request; see the server log' }));
     });
   };
 
