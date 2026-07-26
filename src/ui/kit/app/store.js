@@ -25,11 +25,19 @@
  * @property {Map<string, any>} participants  by participant id
  * @property {Map<string, any>} claims        live claims by claim id
  * @property {Map<string, any[]>} messages    room id → messages, in arrival order
+ * @property {Map<string, any>} deliberations  by deliberation id, live and closed
  */
 
 /** @returns {State} */
 export function emptyState() {
-  return { seq: 0, rooms: new Map(), participants: new Map(), claims: new Map(), messages: new Map() };
+  return {
+    seq: 0,
+    rooms: new Map(),
+    participants: new Map(),
+    claims: new Map(),
+    messages: new Map(),
+    deliberations: new Map(),
+  };
 }
 
 /**
@@ -126,7 +134,7 @@ function byId(rows) {
 
 /**
  * Replace one entry in one map, leaving every other map alone.
- * @param {any} state @param {'rooms'|'participants'|'claims'} key
+ * @param {any} state @param {'rooms'|'participants'|'claims'|'deliberations'} key
  * @param {string} id @param {any} value
  * @returns {State}
  */
@@ -137,7 +145,7 @@ function put(state, key, id, value) {
 }
 
 /**
- * @param {any} state @param {'rooms'|'participants'|'claims'} key @param {string} id
+ * @param {any} state @param {'rooms'|'participants'|'claims'|'deliberations'} key @param {string} id
  * @returns {State}
  */
 function drop(state, key, id) {
@@ -157,6 +165,26 @@ function appendMessage(state, roomId, message) {
   if (existing.some((/** @type {any} */ m) => m.id === message.id)) return state;
   messages.set(roomId, [...existing, message]);
   return { ...state, messages };
+}
+
+/**
+ * The deliberation a room is currently running, if any.
+ *
+ * Terminal ones stay in the model — the record is the point — but only a live
+ * one is the room's *current* business, so a converged decision does not sit
+ * at the top of the stream forever pretending to need a vote.
+ *
+ * @param {State} state
+ * @param {string|undefined} roomId
+ */
+export function openDeliberation(state, roomId) {
+  if (!roomId) return undefined;
+  for (const deliberation of state.deliberations.values()) {
+    if (deliberation.roomId !== roomId) continue;
+    if (deliberation.phase === 'converged' || deliberation.phase === 'failed') continue;
+    return deliberation;
+  }
+  return undefined;
 }
 
 /**
@@ -182,7 +210,49 @@ const HANDLERS = {
   // The clock acted, not a participant — but the roster reads the same either
   // way, so it is the same reducer.
   claim_expired: (state, { payload }) => drop(state, 'claims', payload.claim.id),
+
+  // A deliberation is folded from its events rather than fetched: the read API
+  // has no route for an open one, because the domain has no room-scoped query
+  // and that file is another lane's. A page opened mid-deliberation therefore
+  // sees it on the next event, not on first paint — tracked, not forgotten.
+  deliberation_opened: (state, { payload }) =>
+    put(state, 'deliberations', payload.deliberationId, {
+      ...payload.deliberation,
+      by: payload.by,
+      cast: 0,
+    }),
+
+  voting_opened: (state, { payload }) =>
+    amend(state, payload.deliberationId, { phase: 'voting', phaseEndsAt: payload.phaseEndsAt }),
+
+  // Carries who voted and how many have, never *what* they chose. The feed
+  // cannot leak a ballot because the ballot is not in it (deliberation.md §6).
+  ballot_cast: (state, { payload }) =>
+    amend(state, payload.deliberationId, { cast: payload.cast, eligible: payload.eligible }),
+
+  deliberation_converged: (state, { payload }) =>
+    amend(state, payload.deliberationId, { phase: 'converged', chosen: payload.chosen }),
+
+  deliberation_failed: (state, { payload }) =>
+    amend(state, payload.deliberationId, { phase: 'failed', failureKind: payload.failureKind }),
 };
+
+/**
+ * Merge fields into a deliberation we already hold.
+ *
+ * An event for one we never saw is ignored rather than half-created: a
+ * deliberation with a phase and no question would render as an empty card,
+ * which is worse than rendering nothing until the page is reloaded.
+ *
+ * @param {State} state
+ * @param {string} id
+ * @param {Record<string, unknown>} fields
+ */
+function amend(state, id, fields) {
+  const existing = state.deliberations.get(id);
+  if (!existing) return state;
+  return put(state, 'deliberations', id, { ...existing, ...fields });
+}
 
 /** Exposed so a test can assert the table covers what the domain emits. */
 export const HANDLED_KINDS = Object.keys(HANDLERS);

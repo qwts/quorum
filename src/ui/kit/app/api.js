@@ -60,6 +60,8 @@ export const api = {
     write(`/api/rooms/${encodeURIComponent(room)}/join`, { participantId }),
   post: (/** @type {string} */ room, /** @type {string} */ participantId, /** @type {string} */ body) =>
     write(`/api/rooms/${encodeURIComponent(room)}/messages`, { participantId, body }),
+  vote: (/** @type {string} */ deliberationId, /** @type {string} */ participantId, /** @type {number} */ choice) =>
+    write(`/api/deliberations/${encodeURIComponent(deliberationId)}/vote`, { participantId, choice }),
 };
 
 /**

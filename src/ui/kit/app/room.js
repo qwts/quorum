@@ -13,10 +13,10 @@
 import { openFeed } from './feed.js';
 import { api, paintRoom } from './api.js';
 import { ensureIdentified, forget, isStaleIdentity, remembered } from './me.js';
-import { apply, applyAll, emptyState, roomByName, seed } from './store.js';
+import { apply, applyAll, emptyState, openDeliberation, roomByName, seed } from './store.js';
 import { composerProps } from './composer.js';
 import { createSender } from './posting.js';
-import { rosterView, sidebarView, streamView, topBarView } from './views.js';
+import { proposalView, rosterView, sidebarView, streamView, topBarView } from './views.js';
 
 /**
  * How often the roster re-renders on the clock alone.
@@ -66,6 +66,45 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
     forget,
   });
   composer.addEventListener('send', (/** @type {any} */ event) => void send(event.detail.value));
+
+  // A chip knows the option it carries, and the domain votes by index — so the
+  // deliberation on screen is what maps one to the other. Delegated from the
+  // region rather than bound to the card, because the card is rebuilt on every
+  // render and a listener on it would go with it.
+  regions.stream?.addEventListener('select', (/** @type {any} */ event) => {
+    const live = openDeliberation(state, roomByName(state, openRoom)?.id);
+    if (!live) return;
+    const choice = (live.options ?? []).indexOf(event.detail.option);
+    if (choice >= 0) void cast(live.id, choice);
+  });
+
+  /**
+   * Cast a ballot.
+   *
+   * Nothing is painted optimistically here either, and it matters more than it
+   * does for a message: during voting the tally is concealed (deliberation.md
+   * §6), so an optimistic chip would be the only thing on screen claiming to
+   * know something the protocol is deliberately withholding.
+   *
+   * @param {string} deliberationId
+   * @param {number} choice
+   */
+  async function cast(deliberationId, choice) {
+    notice = null;
+    try {
+      me = await ensureIdentified({ ask: (message) => win.prompt(message), identify: api.identify });
+      if (!me) {
+        notice = 'Voting needs a name — a ballot with nobody behind it is not a ballot.';
+      } else {
+        await api.vote(deliberationId, me.id, choice);
+      }
+    } catch (error) {
+      // Re-casting, a closed phase, not being in the frozen roster — the
+      // domain says which, in words worth showing as they stand.
+      notice = error instanceof Error ? error.message : String(error);
+    }
+    render();
+  }
   regions.composer?.replaceChildren(composer);
 
   let state = emptyState();
@@ -82,7 +121,11 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
     const current = roomByName(state, openRoom);
     regions.sidebar?.replaceChildren(sidebarView(state, openRoom, pick));
     regions.topbar?.replaceChildren(topBarView(state, current, status));
-    regions.stream?.replaceChildren(streamView(state, current));
+    // The open deliberation heads the stream: it is the room's current
+    // business, and scrolling to find what you are voting on is not a thing
+    // anyone should have to do.
+    const live = openDeliberation(state, current?.id);
+    regions.stream?.replaceChildren(...[proposalView(state, live), streamView(state, current)].filter(Boolean));
     // Assigned onto the live element rather than rebuilding it: the composer
     // holds a draft, a caret and focus, and is the one region that must
     // survive a repaint.
