@@ -12,6 +12,10 @@ import assert from 'node:assert/strict';
 import { openQuorum } from '../src/domain/quorum.ts';
 import { startServer } from '../src/mcp/server.ts';
 import { allowedHosts, refuseWrite } from '../src/http/origin.ts';
+import { explainTlsFailure, loadTls } from '../src/http/tls.ts';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join as joinPath } from 'node:path';
 
 const quorum = openQuorum();
 const server = await startServer({ quorum });
@@ -436,4 +440,36 @@ test('a malformed path is a bad request, not a server fault', async () => {
 
   // Still serving afterwards.
   assert.equal((await get('/api/rooms')).status, 200);
+});
+
+test('TLS is off unless configured, and half-configured is a startup error', () => {
+  assert.equal(loadTls({} as NodeJS.ProcessEnv), null, 'loopback is already a secure context');
+
+  // Half-configured is worse than none: it would fail at the first request,
+  // by which time whoever set it is somewhere else.
+  assert.throws(
+    () => loadTls({ QUORUM_TLS_CERT: '/nowhere/cert.pem' } as NodeJS.ProcessEnv),
+    /must be set together/,
+  );
+});
+
+test('an encrypted key without its passphrase fails at startup, in words', () => {
+  // Node says `error:1C800064:Provider routines::bad decrypt` and prints a
+  // stack. That names nothing an operator can act on, and it arrives from
+  // inside the server constructor rather than from the thing that read the
+  // file — so the material is proven usable at load, where it can be
+  // explained.
+  const dir = mkdtempSync(joinPath(tmpdir(), 'quorum-tls-'));
+  const cert = joinPath(dir, 'cert.pem');
+  const key = joinPath(dir, 'key.pem');
+  writeFileSync(cert, '-----BEGIN CERTIFICATE-----\nnot a certificate\n-----END CERTIFICATE-----\n');
+  writeFileSync(key, '-----BEGIN ENCRYPTED PRIVATE KEY-----\nnot a key\n-----END ENCRYPTED PRIVATE KEY-----\n');
+
+  assert.throws(() => loadTls({ QUORUM_TLS_CERT: cert, QUORUM_TLS_KEY: key } as NodeJS.ProcessEnv));
+
+  const explained = explainTlsFailure(new Error('error:1C800064:Provider routines::bad decrypt'));
+  assert.match(explained, /passphrase/);
+  assert.match(explained, /QUORUM_TLS_PASSPHRASE_FILE/, 'the message names the fix, not the symptom');
+
+  assert.match(explainTlsFailure(new Error("ENOENT: no such file, open '/nope'")), /missing/);
 });
