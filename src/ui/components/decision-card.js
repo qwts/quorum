@@ -21,7 +21,7 @@
 import { QuorumElement, define, h } from '../lib/element.js';
 
 export class DecisionCard extends QuorumElement {
-  static props = ['recordId', 'question', 'outcome', 'result', 'failureKind', 'decidedAt', 'room', 'decisionRule', 'summary', 'variant', 'openable'];
+  static props = ['recordId', 'question', 'outcome', 'result', 'failureKind', 'decidedAt', 'room', 'decisionRule', 'reason', 'summary', 'variant', 'openable'];
 
   /** `options: [{option, count, voters?}]`, `silent: string[]`, `dissents: [{name, harness?, note}]`. */
   static data = ['options', 'silent', 'dissents'];
@@ -150,7 +150,9 @@ export class DecisionCard extends QuorumElement {
           // The typed reason, so the card never has to parse prose to know why.
           failed && failureKind && h('span', { class: 'why' }, `failure_kind: ${failureKind}`),
         ),
-      this.attr('summary') && h('p', {}, this.attr('summary')),
+      // `reason` is the current name; `summary` is the deprecated alias the
+      // design still accepts, so a screen written against either keeps working.
+      (this.attr('reason') ?? this.attr('summary')) && h('p', {}, this.attr('reason') ?? this.attr('summary')),
       !summary && this.list('options').length ? tally : null,
       // "2 of 6 ballots" without the four names is not a record of what happened.
       !summary && silent.length

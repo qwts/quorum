@@ -1,10 +1,14 @@
 // The contract. Every attribute a screen may set, and nothing else.
 //
 // Ported from the design system's `<Name>.d.ts` files, which the handoff calls
-// the API and says to treat as the contract. Two shapes changed and both are
-// recorded in `design-version.json`: `ballot` lost `abstain` (v1, protocol
-// §10), and `hidden` became `ballotHidden` because `hidden` is a global HTML
-// attribute that would hide the chip outright.
+// the API and says to treat as the contract. One shape differs, and it is
+// recorded in `design-version.json`: `hidden` became `ballotHidden`, because
+// `hidden` is a global HTML attribute that would hide the chip outright.
+//
+// The `ballot` union is gone rather than narrowed. A v0 ballot is an option
+// index, never a stance (deliberation.md §6) — "add it now" versus "defer to
+// v1" has no against — so `choice` replaces it upstream and the delta that
+// used to record the difference is closed.
 //
 // Kebab-case attributes map to camelCase properties: `phase-ends-at` is
 // `phaseEndsAt`. Both work; both re-render.
@@ -13,7 +17,6 @@ export type Phase = 'proposed' | 'challenging' | 'voting' | 'converged' | 'faile
 export type ParticipantKind = 'agent' | 'human';
 export type IdentityStatus = 'active' | 'idle' | 'waiting';
 export type MessageVariant = 'message' | 'challenge' | 'system' | 'claim';
-export type Ballot = 'for' | 'against';
 export type FailureKind = 'rule_unmet' | 'quorum_absent';
 
 /** Participant identity token — the `(name, harness)` pair, hue-stable across reconnects. */
@@ -54,17 +57,22 @@ export interface QMessageRow extends HTMLElement {
 /** The four server-enforced phases as a rail. `Failed` replaces the terminal step. */
 export interface QPhaseStepper extends HTMLElement {
   phase?: Phase;
+  /** Typed failure kind, printed inside the Failed step — four states, no fifth box. */
+  failureKind?: FailureKind;
   size?: 'sm' | 'md';
   note?: string;
 }
 
-/** A ballot to cast, a recorded vote, or a tally row. */
+/** A ballot to cast, a ballot already cast, or a tally row. */
 export interface QVoteChip extends HTMLElement {
+  /** Option index, as stored in the ballot. Drawn as a mono `[0]` prefix. */
+  choice?: number;
+  /** Voting: this eligible voter has not cast yet. Cast status is public; the choice is not. */
+  pending?: boolean;
   option?: string;
   count?: number | string;
   total?: number | string;
   participant?: string;
-  ballot?: Ballot;
   /** Voting phase: the ballot exists, its content does not show. */
   ballotHidden?: boolean;
   /** Override the tone, e.g. with `identityHue(name, harness)`. */
@@ -102,6 +110,12 @@ export interface QProposalCard extends HTMLElement {
   detail?: string;
   options?: ProposalOption[];
   phase?: Phase;
+  /** Size of the roster frozen at convene — what quorum is measured against (D3). */
+  eligible?: number;
+  /** Wall clock the roster froze at, e.g. `14:05`. */
+  eligibleAt?: string;
+  /** Live room membership. Pass when it differs: the card names both and says which binds. */
+  roomMembers?: number;
   convener?: string;
   convenerHarness?: string;
   convenerKind?: ParticipantKind;
@@ -152,6 +166,9 @@ export interface QDecisionCard extends HTMLElement {
   /** Everyone in the frozen roster who never cast. Named in the expanded record. */
   silent?: string[];
   dissents?: RecordedDissent[];
+  /** Server-authored prose: the rule, the tally shape, and the non-voters on failure. */
+  reason?: string;
+  /** Deprecated alias for `reason`. */
   summary?: string;
   /** `summary` for history lists: no tally, dissent collapses to a count. */
   variant?: 'full' | 'summary';

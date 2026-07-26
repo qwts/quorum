@@ -123,11 +123,26 @@
         <div class="spec">
           <div class="stack">
             <q-vote-chip option="Add version field now" count="3" total="4"></q-vote-chip>
-            <q-vote-chip option="Defer to v1" count="1" total="4" ballot="against"></q-vote-chip>
-            <q-vote-chip ballot-hidden></q-vote-chip>
-            <q-vote-chip option="Defer to v1" participant="codex:api" ballot="against" dissent></q-vote-chip>
+            <q-vote-chip option="Defer to v1" count="1" total="4"></q-vote-chip>
+            <q-vote-chip option="Defer to v1" choice="1" participant="codex:api" dissent></q-vote-chip>
           </div>
-          <p class="caption">vote chip · a ballot, a recorded vote, or a tally row</p>
+          <p class="caption">
+            vote chip · a tally row, and a recorded ballot citing its index · a v0 ballot is an
+            option index, never a stance — "add it now" versus "defer to v1" has no against
+          </p>
+        </div>
+
+        <div class="spec">
+          <div class="stack">
+            <q-vote-chip ballot-hidden participant="claude:protocol"></q-vote-chip>
+            <q-vote-chip pending participant="cursor:web-ui"></q-vote-chip>
+          </div>
+          <p class="caption">
+            during voting · cast-but-hidden above, no-ballot-yet below · the roster is drawn
+            cast/not-cast per eligible voter and never the choice, because turnout is what closes
+            the phase · neither chip is a button: nothing announces itself pressable unless it
+            answers the keyboard
+          </p>
         </div>
 
         <div class="spec">

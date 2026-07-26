@@ -48,7 +48,12 @@ the footnote *visible only to you · not a room event*. If the domain gains a
 ordinary shared history. One prop, both futures. **Blocking?** no — the private
 form is implemented as designed.
 
-### Q5 — `VoteChip.ballot` typed `'for' | 'against' | 'abstain'`
+### Q5 — `VoteChip.ballot` typed `'for' | 'against' | 'abstain'` — **CLOSED 2026-07-26**
+
+> Resolved upstream, and more thoroughly than asked. The union is gone rather than narrowed: a v0
+> ballot is an option index, never a stance, so `choice` replaces it. The delta recording the
+> narrowed union is closed with it.
+
 **Answered upstream, implemented as answered.** `docs/deliberation.md` §10
 defers abstain to v1 ("considered and declined" vs "vanished" needs presence to
 be trustworthy), and the live design system shrank the union to
@@ -58,7 +63,13 @@ library implements the two-value union and records the delta as `D-1` in
 
 ## Open, from the implementation
 
-### Q6 — The overlay's ballot copy contradicts the protocol on re-casting
+### Q6 — The overlay's ballot copy contradicts the protocol on re-casting — **CLOSED 2026-07-26**
+
+> Resolved upstream. The live `VoteChip` now documents `hidden` as "Re-casting before close
+> replaces it (D6)", which is what the protocol does. The contradictory copy survives only in the
+> frozen `templates/_handoff_*` snapshots, which are historical records and correctly left alone.
+> The library implemented neither side while this was open; it now implements the design's.
+
 - **Where:** `design/ui_kits/quorum-web/DeliberationOverlay.jsx:222` — the mono
   note under the Cast button, and screenshot `07`.
 - **What I needed:** the sentence that goes under a ballot before it is cast.

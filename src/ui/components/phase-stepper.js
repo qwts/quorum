@@ -8,7 +8,7 @@ import { QuorumElement, define, h } from '../lib/element.js';
 import { FAILED, PHASES } from '../lib/phase.js';
 
 export class PhaseStepper extends QuorumElement {
-  static props = ['phase', 'size', 'note'];
+  static props = ['phase', 'size', 'note', 'failureKind'];
 
   static styles = `
     :host { display: flex; flex-direction: column; gap: var(--sp-3); }
@@ -60,7 +60,12 @@ export class PhaseStepper extends QuorumElement {
             'aria-current': active ? 'step' : null,
           },
           h('span', { class: 'dot', 'aria-hidden': 'true' }),
-          step.label,
+          // The typed reason rides *inside* the Failed step (D8) — four
+          // states, no fifth box. A failure is a phase with a reason, not a
+          // separate thing that happened alongside one.
+          step.id === 'failed' && this.attr('failureKind')
+            ? `${step.label} · ${this.attr('failureKind')}`
+            : step.label,
         ),
       );
       if (index < steps.length - 1) {

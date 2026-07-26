@@ -17,6 +17,7 @@ export class ProposalCard extends QuorumElement {
   static props = [
     'question', 'detail', 'phase', 'convener', 'convenerHarness', 'convenerKind',
     'decisionRule', 'quorum', 'phaseEndsAt', 'challengeCount', 'votesCast', 'totalVoters',
+    'eligible', 'eligibleAt', 'roomMembers',
     'selectedOption', 'actionLabel', 'compact', 'selectable',
   ];
 
@@ -46,6 +47,9 @@ export class ProposalCard extends QuorumElement {
     h3 { margin: 0; font: var(--type-heading); letter-spacing: var(--ls-tight); color: var(--fg-1); max-width: var(--measure-record); }
     p { margin: var(--sp-4) 0 0; font: var(--type-body); color: var(--text-muted); max-width: var(--measure-message); }
     .meta { display: flex; align-items: center; gap: var(--sp-5); flex-wrap: wrap; font: var(--type-mono); color: var(--text-meta); }
+    /* The live-membership note is the quieter of the two numbers: it is
+       context for the one that binds, not a rival to it. */
+    .meta .since { color: var(--text-faint); }
     .by { display: inline-flex; align-items: center; gap: var(--sp-3); }
     .options { display: flex; flex-direction: column; gap: var(--sp-3); }
     .act { display: flex; gap: var(--sp-4); align-items: center; }
@@ -116,6 +120,11 @@ export class ProposalCard extends QuorumElement {
         h('span', {}, `rule: ${this.attr('decision-rule') ?? 'simple majority'}`),
         // Derived from the roster frozen at convene, never typed by hand (protocol D3/D5).
         this.attr('quorum') && h('span', {}, `quorum: ${this.attr('quorum')}`),
+        // The roster froze at convene and quorum is measured against *that*
+        // (D3). When live membership has moved since, both numbers are named
+        // and the card says which one binds — a single count would be read as
+        // whichever the reader assumed, and they would be right half the time.
+        ...eligibility(this.num('eligible'), this.attr('eligibleAt'), this.num('roomMembers')),
         h('span', {}, `${challenges} challenge${challenges === 1 ? '' : 's'}`),
         votesCast != null && h('span', {}, `${votesCast}/${this.num('totalVoters') ?? 0} voted`),
       ),
@@ -138,6 +147,27 @@ export class ProposalCard extends QuorumElement {
         ),
     );
   }
+}
+
+/**
+ * The two roster numbers, said in a way that cannot be misread.
+ *
+ * Silent when nothing froze, and silent about live membership when it matches
+ * — a second number that always agrees teaches the reader to stop looking at
+ * it, which is exactly when it stops agreeing.
+ *
+ * @param {number|undefined} eligible
+ * @param {string|undefined} at
+ * @param {number|undefined} members
+ */
+function eligibility(eligible, at, members) {
+  if (eligible == null) return [];
+  const frozen = `eligible: ${eligible}${at ? ` (frozen ${at})` : ''}`;
+  if (members == null || members === eligible) return [h('span', {}, frozen)];
+  return [
+    h('span', {}, frozen),
+    h('span', { class: 'since' }, `${members} in the room now — quorum is measured against the frozen roster`),
+  ];
 }
 
 define('q-proposal-card', ProposalCard);
