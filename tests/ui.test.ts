@@ -17,7 +17,7 @@ import { IncomingMessage, ServerResponse } from 'node:http';
 import { checkDesignDrift, designVersion } from '../src/ui/drift.ts';
 // A browser module, imported in Node on purpose: the phase rules are pure, so
 // they are testable without a browser, and the one below is worth testing.
-import { optionChipProps } from '../src/ui/lib/phase.js';
+import { composerHint, optionChipProps } from '../src/ui/lib/phase.js';
 import { serveUi } from '../src/ui/serve.ts';
 
 // fileURLToPath, not .pathname: a percent-encoded path breaks every read.
@@ -197,4 +197,39 @@ test('the UI is served from src/ui and nowhere else', async () => {
   assert.equal((await asked('/ui/../../../etc/passwd')).status, 404);
   assert.equal((await asked('/ui/drift.ts')).status, 404, 'server-side sources are not part of the UI');
   assert.equal((await asked('/ui/styles.css', 'POST')).status, 405);
+});
+
+test('the challenge window never gets a permissive hint by default', () => {
+  // The rule the composer exists to carry. A stance typed into a composer is
+  // public voting, and once some ballots are public the hidden ones protect
+  // nothing (deliberation.md §6) — so the hint has to say what a challenge is
+  // for, in the one phase where getting it wrong undoes the concealment.
+  const challenging = composerHint({ phase: 'challenging' });
+  assert.match(challenging, /considerations/);
+  assert.match(challenging, /Ballots come later and stay hidden/);
+
+  for (const phase of [undefined, 'proposed', 'voting', 'converged', 'failed']) {
+    assert.match(composerHint({ phase }), /Enter to send/, `${phase} is not a challenge window`);
+  }
+
+  // An explicit hint still wins: the design states the no-permissive-hint rule
+  // as guidance to the screen, and enforcing it here would be extending the
+  // design rather than implementing it.
+  assert.equal(composerHint({ phase: 'challenging', hint: 'DMs carry no protocol' }), 'DMs carry no protocol');
+});
+
+test('a disabled composer always says why, even when the screen forgets', () => {
+  // A quiet field with no explanation is this component's only real failure
+  // mode: it reads as broken rather than as closed.
+  assert.equal(
+    composerHint({ disabled: true, disabledReason: 'Voting is open — ballots are cast on the proposal.' }),
+    'Voting is open — ballots are cast on the proposal.',
+  );
+
+  const forgotten = composerHint({ disabled: true });
+  assert.ok(forgotten.length > 0, 'a disabled composer is never silent about being disabled');
+
+  // Disabled outranks everything: a keyboard hint beside a field you cannot
+  // type into is an instruction that does not work.
+  assert.equal(composerHint({ disabled: true, hint: 'Enter to send', phase: 'challenging' }), forgotten);
 });

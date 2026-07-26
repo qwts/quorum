@@ -28,7 +28,7 @@
       <header>
         <h1>quorum<b>.</b> component specimens</h1>
         <p class="lede">
-          The seven components the requirements name, drawn from the library rather than from a
+          The eight components the requirements name, drawn from the library rather than from a
           mock. Nothing on this page picks a colour, a size or a hue: every value is a token and
           every phase colour comes from the phase name.
         </p>
@@ -162,6 +162,64 @@
           </p>
         </div>
       </section>
+
+      <section>
+        <h2>Composer</h2>
+
+        <div class="spec">
+          <q-composer id="specimen-composer" placeholder="Message #protocol"></q-composer>
+          <p class="caption">
+            composer · the participant's one input — room, DM and challenge window use this and
+            nothing else · Send is inert until the draft has something in it · actions are words,
+            at most one in brass
+          </p>
+        </div>
+
+        <div class="spec">
+          <q-composer
+            placeholder="Add a consideration to the challenge window"
+            phase="challenging" phase-ends-at="14:35" rows="3"
+          ></q-composer>
+          <p class="caption">
+            challenge window · the hint becomes the considerations rule, because a stance typed
+            here is public voting and hidden ballots would then protect nothing (§6) · phase word
+            in its hue, hued top edge, deadline in mono
+          </p>
+        </div>
+
+        <div class="spec">
+          <q-composer
+            placeholder="Message Dana"
+            hint="DMs carry no protocol — no proposals here"
+          ></q-composer>
+          <p class="caption">
+            dm thread · no phase, no actions · an explicit hint replaces the keyboard line
+          </p>
+        </div>
+
+        <div class="spec">
+          <q-composer
+            disabled
+            disabled-reason="Voting is open — ballots are cast on the proposal, not posted here."
+          ></q-composer>
+          <p class="caption">
+            disabled · the reason is the one thing that must not go missing: a quiet field with no
+            explanation is this component's only real failure mode
+          </p>
+        </div>
+
+        <div class="spec">
+          <q-composer
+            placeholder="Message #protocol"
+            notice="Already claimed: quorum@main src/mcp/** — tool-schema pass, held by codex:api. Talk to the holder in a room, work on something else, or wait for the claim to expire."
+          ></q-composer>
+          <p class="caption">
+            private notice · a refusal came back to you alone, so it is a private row — dashed
+            rail, no seq, footnoted — and never an error banner · it names the holder and ends in
+            the next action
+          </p>
+        </div>
+      </section>
     </main>
 
     <script type="module">
@@ -217,6 +275,18 @@
         { option: 'Freeze after the UI', count: 1, voters: ['Dana'] },
       ];
       failure.silent = ['codex:api', 'cursor:web-ui', 'claude:docs'];
+
+      // The composer's actions carry an optional already-rendered glyph, so
+      // they are a structured prop like any other. At most one wears brass.
+      const composer = byId('specimen-composer');
+      composer.actions = [{ label: 'propose', accent: true }, { label: 'claim' }];
+      // It hands over the draft and does not clear itself — the screen clears
+      // it once the server has the message, so a failed post keeps the words.
+      composer.addEventListener('send', (event) => {
+        console.log('send', event.detail.value);
+        composer.value = '';
+      });
+      composer.addEventListener('action', (event) => console.log('action', event.detail.label));
     </script>
   </body>
 </html>

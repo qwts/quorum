@@ -7,17 +7,22 @@ discovered.** This file is the receipt. Copy it into the library root and keep i
 
 ```
 design_system: quorum-design-system
-design_version: 0.2.0
-captured_at: 2026-07-25
+design_version: 0.3.0
+captured_at: 2026-07-26
 source_project: Quorum Design System (Anthropic Design tool)
 upstream_repo: qwts/quorum (branch main)
-components: 7          # MessageRow, IdentityChip, ProposalCard, PhaseStepper, VoteChip, DissentBadge, DecisionCard
+components: 8          # MessageRow, IdentityChip, ProposalCard, PhaseStepper, VoteChip, DissentBadge, DecisionCard, Composer
 screens: 6             # room, deliberation, overlay, records, dm, connect
 tokens: 139
 foundation_cards: 17
 ```
 
-`0.2.0` is the version *after* the protocol-review pass: typed failure kinds (`rule_unmet` |
+`0.3.0` adds the **composer** — the input `--rail-composer-min` reserved space for and the first pass
+never specified. It is a design-system primitive (`components/composer/Composer.jsx` + `.d.ts` +
+`.prompt.md`), promoted from the UI kit's local chrome, so the library implements it rather than
+composing one from tokens. No token changed; no existing prop changed.
+
+`0.2.0` was the version *after* the protocol-review pass: typed failure kinds (`rule_unmet` |
 `quorum_absent`, no `expired`), `phase_ends_at` on every phase, derived quorum against the roster
 frozen at convene, private claim refusals, considerations-not-stances challenge copy, and the
 deliberation overlay. `0.1.0` was the first pass (foundations + seven components + five screens).
@@ -28,7 +33,7 @@ Record the version the library implements, next to the code:
 
 ```json
 // src/ui/design-version.json
-{ "implements": "0.2.0", "verified": "2026-07-25" }
+{ "implements": "0.3.0", "verified": "2026-07-26" }
 ```
 
 ## Sync procedure
@@ -53,3 +58,4 @@ Record the version the library implements, next to the code:
 |---|---|---|---|
 | 0.1.0 | 2026-07-24 | first pass: foundations, 7 components, 5 screens | — |
 | 0.2.0 | 2026-07-25 | failure kinds typed; `phase_ends_at`; derived/frozen quorum; private refusals; challenge-copy rule; deliberation overlay | — |
+| 0.3.0 | 2026-07-26 | `Composer` promoted to a primitive (8th component): message-not-ballot rule, `phase`/`phaseEndsAt`, private `notice`, `disabled` + `disabledReason`. No token or prop changes. | — |

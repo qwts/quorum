@@ -1,9 +1,9 @@
 {
   "designSystem": "quorum-design-system",
-  "implements": "0.2.0",
-  "verified": "2026-07-25",
+  "implements": "0.3.0",
+  "verified": "2026-07-26",
   "source": "Quorum Design System handoff, attached to qwts/quorum#13",
-  "components": 7,
+  "components": 8,
   "tokens": 139,
   "deltas": [
     {
