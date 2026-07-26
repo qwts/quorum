@@ -24,6 +24,7 @@ export function recordView(summary, record) {
       'data-decision': summary.deliberationId,
       'record-id': props.recordId,
       question: props.question,
+      room: summary.room,
       result: props.result,
       'failure-kind': props.failureKind,
       'decided-at': clock(record ? record.closedAt : summary.closedAt),

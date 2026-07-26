@@ -12,6 +12,7 @@
 import { openFeed } from './feed.js';
 import { api } from './api.js';
 import { historyView } from './records-view.js';
+import { isFresher, withRoomNames } from './history.js';
 
 /**
  * @param {object} options
@@ -23,6 +24,8 @@ export async function mountRecords({ room, doc = document }) {
 
   /** @type {any[]} */
   let decisions = [];
+  /** The stamp of the snapshot on screen, so an older refresh cannot replace it. */
+  let painted = -1;
   /** Full records by deliberation id, fetched when one is opened. @type {Map<string, any>} */
   const opened = new Map();
   /** @type {string|null} */
@@ -71,8 +74,11 @@ export async function mountRecords({ room, doc = document }) {
     void open(id);
   });
 
-  const first = await api.decisions(room);
-  decisions = first.decisions;
+  // Rooms come along for the names: the list endpoint carries only `roomId`,
+  // and in the all-rooms view a record you cannot place is one you cannot cite.
+  const [first, rooms] = await Promise.all([api.decisions(room), api.rooms()]);
+  painted = first.seq;
+  decisions = withRoomNames(first.decisions, rooms.rooms);
   render();
 
   // A decision that closes while this page is open belongs at the top of it.
@@ -81,10 +87,14 @@ export async function mountRecords({ room, doc = document }) {
     after: first.seq,
     onEvent: (/** @type {any} */ event) => {
       if (event.kind !== 'deliberation_converged' && event.kind !== 'deliberation_failed') return;
-      void api
-        .decisions(room)
-        .then((fresh) => {
-          decisions = fresh.decisions;
+      void Promise.all([api.decisions(room), api.rooms()])
+        .then(([fresh, current]) => {
+          // Ignore a response that is older than what is on screen. Two
+          // deliberations closing together race, and the loser arriving last
+          // would otherwise delete the winner's row.
+          if (!isFresher(fresh.seq, painted)) return;
+          painted = fresh.seq;
+          decisions = withRoomNames(fresh.decisions, current.rooms);
           render();
         })
         .catch(() => {

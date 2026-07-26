@@ -14,6 +14,7 @@ import { ensureIdentified, isStaleIdentity } from '../src/ui/kit/app/me.js';
 import { createSender } from '../src/ui/kit/app/posting.js';
 import { composerProps } from '../src/ui/kit/app/composer.js';
 import { recordProps } from '../src/ui/kit/app/record.js';
+import { isFresher, withRoomNames } from '../src/ui/kit/app/history.js';
 
 const ROOM = { id: 'r1', name: 'protocol', topic: 'the wire contract', decisionRule: 'majority', members: 2 };
 const CODEX = { id: 'p1', name: 'codex:api', harness: 'codex', repo: null, branch: null };
@@ -441,4 +442,33 @@ test('an unopened record shows a summary and claims no tally', () => {
   assert.deepEqual(props.dissents, []);
   assert.equal(props.outcome, null, 'a failure chose nothing, and says so rather than nothing');
   assert.equal(props.failureKind, 'quorum_absent');
+});
+
+test('a record in the all-rooms view says which room decided it', () => {
+  // The list endpoint carries roomId and no name. Two rooms asking similar
+  // questions is not hypothetical with a fleet of agents on one codebase, and
+  // a record you cannot place is a record you cannot cite.
+  const named = withRoomNames(
+    [{ deliberationId: 'd1', roomId: 'r1' }, { deliberationId: 'd2', roomId: 'r2' }],
+    [{ id: 'r1', name: 'protocol' }, { id: 'r2', name: 'web-ui' }],
+  );
+  assert.deepEqual(named.map((d: any) => d.room), ['protocol', 'web-ui']);
+
+  // A room the reader cannot see leaves the field unset rather than printing a
+  // UUID — an id on a record reads as part of the record.
+  const orphan = withRoomNames([{ deliberationId: 'd3', roomId: 'gone' }], []);
+  assert.equal(orphan[0]?.room, undefined);
+});
+
+test('an older refresh cannot replace a newer history', () => {
+  // Two deliberations closing together start two independent reads. If the
+  // later one answers first and the earlier answers second, applying blindly
+  // deletes the freshest record until something else closes or the page
+  // reloads. Every response is stamped before its read, so the stamps order
+  // them even when the network does not.
+  assert.equal(isFresher(12, 10), true, 'a newer snapshot lands');
+  assert.equal(isFresher(10, 12), false, 'a straggler is dropped');
+  assert.equal(isFresher(12, 12), true, 'an equal stamp is the same history, so either is fine');
+  assert.equal(isFresher(0, -1), true, 'the first paint always lands');
+  assert.equal(isFresher(undefined as any, 5), false, 'a response with no stamp cannot be ordered, so it is not trusted');
 });
