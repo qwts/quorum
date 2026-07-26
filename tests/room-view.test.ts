@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { apply, applyAll, emptyState, liveClaims, messagesIn, roomByName, seed } from '../src/ui/kit/app/store.js';
+import { apply, applyAll, emptyState, liveClaims, messagesIn, liveDeliberations, roomByName, seed } from '../src/ui/kit/app/store.js';
 import { clock, count, remaining, scopeOf } from '../src/ui/kit/app/format.js';
 import { ensureIdentified, isStaleIdentity } from '../src/ui/kit/app/me.js';
 import { createSender } from '../src/ui/kit/app/posting.js';
@@ -311,4 +311,92 @@ test('a refusal that is not about identity is shown, not retried', async () => {
   assert.match(String(h.box.notice), /before posting/, 'the server said it better than we would');
   assert.equal(h.box.draft, '', 'nothing was submitted, so nothing was cleared');
   assert.equal(h.box.settled, 1, 'the field is released exactly once, whatever happened');
+});
+
+const DELIBERATION = {
+  id: 'd1', roomId: 'r1', convenerId: 'p1',
+  question: 'Do we gate the tool schema behind a version field?',
+  options: ['Add it now', 'Defer to v1'],
+  eligible: ['p1', 'p2'], phase: 'challenging', phaseEndsAt: 5_000,
+};
+
+test('a deliberation is folded from its events, and its ballots stay secret', () => {
+  // The feed carries who voted and how many have — never what they chose. The
+  // concealment is a property of the event, not of the screen: a page cannot
+  // leak a ballot it was never sent (deliberation.md §6).
+  let state = apply(painted(), event(11, 'deliberation_opened', {
+    deliberationId: 'd1', deliberation: DELIBERATION, by: 'codex:api',
+  }, 'r1'));
+  assert.equal(liveDeliberations(state, 'r1')[0]?.question, DELIBERATION.question);
+
+  state = apply(state, event(12, 'voting_opened', { deliberationId: 'd1', phaseEndsAt: 9_000 }, 'r1'));
+  assert.equal(liveDeliberations(state, 'r1')[0]?.phase, 'voting');
+
+  state = apply(state, event(13, 'ballot_cast', { deliberationId: 'd1', by: 'Dana', cast: 1, eligible: 2 }, 'r1'));
+  const live = liveDeliberations(state, 'r1')[0];
+
+  // The options are public — you cannot vote for a choice you cannot read.
+  assert.deepEqual(live?.options, ['Add it now', 'Defer to v1']);
+  // How many have voted is public, because turnout is what closes the phase.
+  assert.equal(live?.cast, 1);
+  assert.equal(live?.eligible, 2);
+
+  // What must not exist is a mapping from a voter to a choice. The event does
+  // not carry one, so the model cannot hold one however it folds — the
+  // concealment is a property of the feed, not a discipline of the screen.
+  assert.equal(
+    Object.values(live ?? {}).some((value) => typeof value === 'object' && value !== null && !Array.isArray(value)),
+    false,
+    'nothing in a live deliberation is a per-voter record',
+  );
+});
+
+test('a closed deliberation stops being the room\'s current business', () => {
+  // The record is kept — that is the point — but a converged decision must not
+  // sit at the top of the stream forever asking to be voted on.
+  const opened = apply(painted(), event(11, 'deliberation_opened', {
+    deliberationId: 'd1', deliberation: DELIBERATION, by: 'codex:api',
+  }, 'r1'));
+
+  for (const [kind, payload] of [
+    ['deliberation_converged', { deliberationId: 'd1', chosen: 'Add it now' }],
+    ['deliberation_failed', { deliberationId: 'd1', failureKind: 'quorum_absent' }],
+  ] as const) {
+    const closed = apply(opened, event(12, kind, payload, 'r1'));
+    assert.deepEqual(liveDeliberations(closed, 'r1'), [], `${kind} is no longer open`);
+    assert.equal(closed.deliberations.size, 1, 'but it is still on the record');
+  }
+});
+
+test('an event for a deliberation we never saw changes nothing', () => {
+  // A page opened mid-deliberation has no snapshot to start from — the read
+  // API has no route for an open one. Half-creating from a later event would
+  // draw a card with a phase and no question, which is worse than drawing
+  // nothing until the page is reloaded.
+  const state = painted();
+  const orphan = apply(state, event(11, 'ballot_cast', { deliberationId: 'ghost', by: 'Dana', cast: 1, eligible: 2 }, 'r1'));
+  assert.equal(orphan.deliberations.size, 0);
+  assert.equal(orphan.seq, 11, 'the cursor still advances — it has been seen, it just did nothing');
+});
+
+test('a room running two proposals shows both, soonest deadline first', () => {
+  // The domain permits it — `propose` refuses a non-member and a bad question,
+  // not a second live deliberation. Returning only the first would hide the
+  // second completely, and keep hiding it past its own deadline, so a ballot
+  // could become impossible to cast with nothing ever saying why.
+  const second = { ...DELIBERATION, id: 'd2', question: 'Do we ship presence first?', phaseEndsAt: 2_000 };
+  const state = applyAll(painted(), [
+    event(11, 'deliberation_opened', { deliberationId: 'd1', deliberation: DELIBERATION, by: 'codex:api' }, 'r1'),
+    event(12, 'deliberation_opened', { deliberationId: 'd2', deliberation: second, by: 'codex:api' }, 'r1'),
+  ]);
+
+  assert.deepEqual(
+    liveDeliberations(state, 'r1').map((d: any) => d.id),
+    ['d2', 'd1'],
+    'whoever is deciding meets the one that closes first',
+  );
+
+  // Closing one leaves the other alone.
+  const closed = apply(state, event(13, 'deliberation_converged', { deliberationId: 'd2', chosen: 'x' }, 'r1'));
+  assert.deepEqual(liveDeliberations(closed, 'r1').map((d: any) => d.id), ['d1']);
 });
