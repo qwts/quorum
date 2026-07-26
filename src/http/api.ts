@@ -69,10 +69,10 @@ export function serveApi(req: IncomingMessage, res: ServerResponse, url: URL, qu
   if (!url.pathname.startsWith(API_PREFIX)) return false;
 
   if (req.method !== 'GET') {
-    // Writes are a separate question — a human posting is a domain concern
-    // (do they become a participant? with what identity?) before it is an
-    // HTTP one, so this pass refuses rather than guesses.
-    send(res, 405, { error: 'the web API is read-only in this pass; agents write through MCP' });
+    // Unreachable in the server, which routes every non-GET to write.ts before
+    // this. Kept because it is what makes "this file only reads" true of the
+    // file rather than of the wiring around it.
+    send(res, 405, { error: 'this route reads only; writes are POSTs handled elsewhere' });
     return true;
   }
 

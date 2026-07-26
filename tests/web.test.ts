@@ -31,6 +31,19 @@ async function get(path: string): Promise<{ status: number; body: any }> {
   return { status: response.status, body: await response.json() };
 }
 
+async function post(
+  path: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Promise<{ status: number; body: any }> {
+  const response = await fetch(`${origin}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  });
+  return { status: response.status, body: await response.json() };
+}
+
 /**
  * Read SSE frames until `want` of them have a real event name, or the deadline
  * passes. Returns the parsed frames so a test can assert on seq and payload.
@@ -139,10 +152,21 @@ test('a room nobody created is a 404, not a crash', async () => {
   assert.match(missing.body.error, /no-such-room/);
 });
 
-test('the API is read-only, and says so rather than half-accepting a write', async () => {
-  const response = await fetch(`${origin}/api/rooms`, { method: 'POST' });
-  assert.equal(response.status, 405);
-  assert.match(((await response.json()) as { error: string }).error, /read-only/);
+test('a route that only reads refuses a write rather than half-accepting one', async () => {
+  // `/api/rooms` reads; there is no write behind it. A POST is routed to the
+  // write surface, finds nothing, and 404s — it never reaches the read
+  // handler, which is what keeps "this file only reads" true of the file.
+  const response = await fetch(`${origin}/api/rooms`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  });
+  assert.equal(response.status, 404);
+  assert.match(((await response.json()) as { error: string }).error, /no such route/);
+
+  // And a write with no content type is refused before any parsing happens.
+  const bare = await fetch(`${origin}/api/rooms`, { method: 'POST' });
+  assert.equal(bare.status, 403);
 });
 
 test('a human watching sees an agent post at the same seq the agent wrote it', async () => {
@@ -236,4 +260,130 @@ test('a first paint gets the end of a long room, not the beginning', async () =>
     walked.body.messages.map((m: any) => m.body),
     ['message 152', 'message 153'],
   );
+});
+
+test('a human joins, posts, and an agent reads it from the same domain', () => {
+  // The claim this transport exists to make, exercised in the direction that
+  // was missing: a browser writes, and the write is a first-class domain event
+  // the agents see — not a parallel record kept for humans.
+  return (async () => {
+    const identified = await post('/api/identify', { name: 'Rowan' });
+    assert.equal(identified.status, 200);
+    assert.equal(identified.body.participant.harness, 'human');
+
+    const id = identified.body.participant.id;
+    // Idempotent on (name, harness): a reload must rejoin, never mint a twin.
+    const again = await post('/api/identify', { name: 'Rowan' });
+    assert.equal(again.body.participant.id, id);
+
+    assert.equal((await post('/api/rooms/protocol/join', { participantId: id })).status, 200);
+
+    const posted = await post('/api/rooms/protocol/messages', {
+      participantId: id,
+      body: 'Reviewed the wire contract — the seq stamp is the part I would keep.',
+    });
+    assert.equal(posted.status, 200);
+
+    // The domain, asked the way an agent asks it.
+    const seen = quorum.readMessages({ room: 'protocol', limit: 200 }).at(-1);
+    assert.equal(seen!.body, 'Reviewed the wire contract — the seq stamp is the part I would keep.');
+    assert.equal(seen!.participantId, id);
+    assert.ok(posted.body.seq >= seen!.id, 'the response stamps the feed after the write');
+  })();
+});
+
+test('a human who has not joined is refused in the words an agent gets', async () => {
+  const { body } = await post('/api/identify', { name: 'Ari' });
+  const refused = await post('/api/rooms/protocol/messages', {
+    participantId: body.participant.id,
+    body: 'posting without joining',
+  });
+
+  // One protocol, not two: the human transport does not get a softer rule, and
+  // the refusal is the domain's own sentence — actionable, ending in what to do.
+  assert.equal(refused.status, 409);
+  assert.match(refused.body.error, /join .*protocol.* before posting/);
+});
+
+test('a page on another site cannot write to this server', async () => {
+  // The threat this file exists for: the server listens on 127.0.0.1 with no
+  // auth, so once it writes, every page the human visits can reach it. A
+  // browser always sends Origin on a POST and a page cannot forge it.
+  const { body } = await post('/api/identify', { name: 'Nico' });
+  await post('/api/rooms/protocol/join', { participantId: body.participant.id });
+
+  const attacked = await post(
+    '/api/rooms/protocol/messages',
+    { participantId: body.participant.id, body: 'posted by evil.example' },
+    { origin: 'http://evil.example' },
+  );
+  assert.equal(attacked.status, 403);
+  assert.match(attacked.body.error, /cross-origin/);
+
+  // A host that merely *ends* with ours is not ours.
+  const suffix = await post(
+    '/api/identify',
+    { name: 'Nico' },
+    { origin: `http://127.0.0.1:${server.port}.evil.example` },
+  );
+  assert.equal(suffix.status, 403);
+
+  // The UI this server serves is same-origin, and works.
+  const allowed = await post('/api/identify', { name: 'Nico' }, { origin: `http://127.0.0.1:${server.port}` });
+  assert.equal(allowed.status, 200);
+
+  assert.ok(
+    !quorum.readMessages({ room: 'protocol', limit: 200 }).some((m) => m.body.includes('evil.example')),
+    'nothing the cross-origin request asked for reached the room',
+  );
+});
+
+test('a form post cannot slip past the preflight', async () => {
+  // application/json is not a "simple request", so a cross-origin attempt is
+  // preflighted and we answer no preflight. Without this check an attacker
+  // drops to text/plain — which is simple, needs no preflight, and would
+  // otherwise arrive with a JSON body the parser is perfectly happy with.
+  const smuggled = await post('/api/identify', JSON.stringify({ name: 'Smuggled' }), {
+    'content-type': 'text/plain;charset=UTF-8',
+  });
+  assert.equal(smuggled.status, 403);
+  assert.match(smuggled.body.error, /application\/json/);
+
+  assert.ok(
+    !quorum.listParticipants().some((p) => p.name === 'Smuggled'),
+    'the participant was never created',
+  );
+});
+
+test('a human votes through the browser, and the domain counts it', async () => {
+  const room = quorum.createRoom({ name: 'ballots', topic: 'voting over http', by: dana.id });
+  quorum.joinRoom({ room: 'ballots', participantId: codex.id });
+  const proposed = quorum.propose({
+    participantId: dana.id,
+    room: 'ballots',
+    question: 'Do we ship the write path before presence?',
+    options: ['Yes', 'No'],
+  });
+  assert.equal(room.name, 'ballots');
+  quorum.closeChallenges({ deliberationId: proposed.id, participantId: dana.id });
+
+  const cast = await post(`/api/deliberations/${proposed.id}/vote`, { participantId: dana.id, choice: 0 });
+  assert.equal(cast.status, 200);
+  assert.equal(cast.body.cast, 1);
+
+  // A ballot index has to be an integer — "0" from a form field is not one,
+  // and silently coercing it is how a vote lands on the wrong option.
+  const fuzzy = await post(`/api/deliberations/${proposed.id}/vote`, { participantId: codex.id, choice: '0' });
+  assert.equal(fuzzy.status, 409);
+  assert.match(fuzzy.body.error, /option index/);
+});
+
+test('a malformed or unknown write is refused, not half-accepted', async () => {
+  assert.equal((await post('/api/identify', 'not json at all')).status, 409);
+  assert.equal((await post('/api/identify', ['an', 'array'])).status, 409);
+  assert.equal((await post('/api/identify', {})).status, 409, 'name is required');
+  assert.equal((await post('/api/nope', {})).status, 404);
+
+  const put = await fetch(`${origin}/api/rooms`, { method: 'PUT', headers: { 'content-type': 'application/json' } });
+  assert.equal(put.status, 405);
 });
