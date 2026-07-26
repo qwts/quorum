@@ -13,7 +13,7 @@
 import { openFeed } from './feed.js';
 import { api, paintRoom } from './api.js';
 import { ensureIdentified, forget, isStaleIdentity, remembered } from './me.js';
-import { apply, applyAll, emptyState, openDeliberation, roomByName, seed } from './store.js';
+import { apply, applyAll, emptyState, liveDeliberations, roomByName, seed } from './store.js';
 import { composerProps } from './composer.js';
 import { createSender } from './posting.js';
 import { proposalView, rosterView, sidebarView, streamView, topBarView } from './views.js';
@@ -72,7 +72,12 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
   // region rather than bound to the card, because the card is rebuilt on every
   // render and a listener on it would go with it.
   regions.stream?.addEventListener('select', (/** @type {any} */ event) => {
-    const live = openDeliberation(state, roomByName(state, openRoom)?.id);
+    // The card the chip belongs to, not "the" deliberation: a room may be
+    // running several, and picking the first would cast a ballot in one
+    // proposal from a chip belonging to another.
+    const card = event.target?.closest?.('q-proposal-card');
+    const id = card?.dataset?.deliberation;
+    const live = liveDeliberations(state, roomByName(state, openRoom)?.id).find((d) => d.id === id);
     if (!live) return;
     const choice = (live.options ?? []).indexOf(event.detail.option);
     if (choice >= 0) void cast(live.id, choice);
@@ -124,8 +129,11 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
     // The open deliberation heads the stream: it is the room's current
     // business, and scrolling to find what you are voting on is not a thing
     // anyone should have to do.
-    const live = openDeliberation(state, current?.id);
-    regions.stream?.replaceChildren(...[proposalView(state, live), streamView(state, current)].filter(Boolean));
+    const live = liveDeliberations(state, current?.id);
+    regions.stream?.replaceChildren(
+      ...live.map((deliberation) => proposalView(state, deliberation)).filter(Boolean),
+      streamView(state, current),
+    );
     // Assigned onto the live element rather than rebuilding it: the composer
     // holds a draft, a caret and focus, and is the one region that must
     // survive a repaint.

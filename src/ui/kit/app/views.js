@@ -203,6 +203,9 @@ export function proposalView(state, deliberation) {
   );
 
   const card = /** @type {any} */ (h('q-proposal-card', {
+    // Which deliberation this card is, so a ballot from it reaches the right
+    // one when a room is running more than one.
+    'data-deliberation': deliberation.id,
     question: deliberation.question,
     phase: deliberation.phase,
     convener: convener?.name ?? deliberation.by,

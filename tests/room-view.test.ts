@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { apply, applyAll, emptyState, liveClaims, messagesIn, openDeliberation, roomByName, seed } from '../src/ui/kit/app/store.js';
+import { apply, applyAll, emptyState, liveClaims, messagesIn, liveDeliberations, roomByName, seed } from '../src/ui/kit/app/store.js';
 import { clock, count, remaining, scopeOf } from '../src/ui/kit/app/format.js';
 import { ensureIdentified, isStaleIdentity } from '../src/ui/kit/app/me.js';
 import { createSender } from '../src/ui/kit/app/posting.js';
@@ -327,13 +327,13 @@ test('a deliberation is folded from its events, and its ballots stay secret', ()
   let state = apply(painted(), event(11, 'deliberation_opened', {
     deliberationId: 'd1', deliberation: DELIBERATION, by: 'codex:api',
   }, 'r1'));
-  assert.equal(openDeliberation(state, 'r1')?.question, DELIBERATION.question);
+  assert.equal(liveDeliberations(state, 'r1')[0]?.question, DELIBERATION.question);
 
   state = apply(state, event(12, 'voting_opened', { deliberationId: 'd1', phaseEndsAt: 9_000 }, 'r1'));
-  assert.equal(openDeliberation(state, 'r1')?.phase, 'voting');
+  assert.equal(liveDeliberations(state, 'r1')[0]?.phase, 'voting');
 
   state = apply(state, event(13, 'ballot_cast', { deliberationId: 'd1', by: 'Dana', cast: 1, eligible: 2 }, 'r1'));
-  const live = openDeliberation(state, 'r1');
+  const live = liveDeliberations(state, 'r1')[0];
 
   // The options are public — you cannot vote for a choice you cannot read.
   assert.deepEqual(live?.options, ['Add it now', 'Defer to v1']);
@@ -363,7 +363,7 @@ test('a closed deliberation stops being the room\'s current business', () => {
     ['deliberation_failed', { deliberationId: 'd1', failureKind: 'quorum_absent' }],
   ] as const) {
     const closed = apply(opened, event(12, kind, payload, 'r1'));
-    assert.equal(openDeliberation(closed, 'r1'), undefined, `${kind} is no longer open`);
+    assert.deepEqual(liveDeliberations(closed, 'r1'), [], `${kind} is no longer open`);
     assert.equal(closed.deliberations.size, 1, 'but it is still on the record');
   }
 });
@@ -377,4 +377,26 @@ test('an event for a deliberation we never saw changes nothing', () => {
   const orphan = apply(state, event(11, 'ballot_cast', { deliberationId: 'ghost', by: 'Dana', cast: 1, eligible: 2 }, 'r1'));
   assert.equal(orphan.deliberations.size, 0);
   assert.equal(orphan.seq, 11, 'the cursor still advances — it has been seen, it just did nothing');
+});
+
+test('a room running two proposals shows both, soonest deadline first', () => {
+  // The domain permits it — `propose` refuses a non-member and a bad question,
+  // not a second live deliberation. Returning only the first would hide the
+  // second completely, and keep hiding it past its own deadline, so a ballot
+  // could become impossible to cast with nothing ever saying why.
+  const second = { ...DELIBERATION, id: 'd2', question: 'Do we ship presence first?', phaseEndsAt: 2_000 };
+  const state = applyAll(painted(), [
+    event(11, 'deliberation_opened', { deliberationId: 'd1', deliberation: DELIBERATION, by: 'codex:api' }, 'r1'),
+    event(12, 'deliberation_opened', { deliberationId: 'd2', deliberation: second, by: 'codex:api' }, 'r1'),
+  ]);
+
+  assert.deepEqual(
+    liveDeliberations(state, 'r1').map((d: any) => d.id),
+    ['d2', 'd1'],
+    'whoever is deciding meets the one that closes first',
+  );
+
+  // Closing one leaves the other alone.
+  const closed = apply(state, event(13, 'deliberation_converged', { deliberationId: 'd2', chosen: 'x' }, 'r1'));
+  assert.deepEqual(liveDeliberations(closed, 'r1').map((d: any) => d.id), ['d1']);
 });
