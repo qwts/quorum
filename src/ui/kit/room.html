@@ -28,7 +28,10 @@
       main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
       .head { height: var(--header-h); flex: 0 0 auto; border-bottom: var(--border-width) solid var(--line-1); display: flex; align-items: center; padding: 0 var(--sp-7); }
       .body { flex: 1 1 auto; min-height: 0; display: flex; }
-      .stream { flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: var(--sp-5) 0; }
+      /* The stream scrolls; the composer does not. It is pinned at the foot of
+         this column rather than floating, so it never covers the last message. */
+      .column { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+      .stream { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; padding: var(--sp-5) 0; }
       .side-roster { width: var(--rail-roster); flex: 0 0 auto; border-left: var(--border-width) solid var(--line-1); overflow-y: auto; padding: var(--sp-5); }
 
       /* Views own their internals; these are the classes they emit. */
@@ -87,7 +90,10 @@
       <main>
         <div class="head" id="topbar"></div>
         <div class="body">
-          <div class="stream" id="stream"></div>
+          <div class="column">
+            <div class="stream" id="stream"></div>
+            <div id="composer"></div>
+          </div>
           <div class="side-roster" id="roster"></div>
         </div>
       </main>

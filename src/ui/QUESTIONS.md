@@ -170,3 +170,26 @@ library implements the two-value union and records the delta as `D-1` in
   working.
 - **Blocking?** no. If a minimum-width notice is wanted, it needs a designed
   value or a licence to hardcode the derived one.
+
+### Q12 — Naming yourself has no designed step
+
+A human must be a participant before they can post, and v0 has no accounts
+(requirements §3) — so the browser asks for a name and calls `identify`, the
+same claim an agent makes. There is no component for asking.
+
+The library ships one input, the composer, and it is a message field. Rather
+than invent a dialog — the thing this library exists to prevent — the name is
+collected with the browser's own `prompt()`. It is platform chrome, not a
+design decision, which is the only reason it is acceptable as it stands.
+
+The designed home for this is the **connect screen** (screenshots 16–17,
+`ConnectAgent.jsx`), which already covers pairing an agent. Two questions for
+the design side:
+
+1. Does the connect screen cover a *human* naming themselves, or is that a
+   sixth screen?
+2. If a dialog is wanted anywhere in this product, it needs to be a primitive —
+   a screen composing one from tokens is the delta this rule forbids.
+
+Until then the composer's hint says what pressing send will do: `you will be
+asked for a name once`.

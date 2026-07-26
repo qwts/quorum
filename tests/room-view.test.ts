@@ -10,6 +10,9 @@ import assert from 'node:assert/strict';
 
 import { apply, applyAll, emptyState, liveClaims, messagesIn, roomByName, seed } from '../src/ui/kit/app/store.js';
 import { clock, count, remaining, scopeOf } from '../src/ui/kit/app/format.js';
+import { ensureIdentified, isStaleIdentity } from '../src/ui/kit/app/me.js';
+import { createSender } from '../src/ui/kit/app/posting.js';
+import { composerProps } from '../src/ui/kit/app/composer.js';
 
 const ROOM = { id: 'r1', name: 'protocol', topic: 'the wire contract', decisionRule: 'majority', members: 2 };
 const CODEX = { id: 'p1', name: 'codex:api', harness: 'codex', repo: null, branch: null };
@@ -159,4 +162,153 @@ test('a repaint that lands behind the feed does not swallow what arrived meanwhi
     ['first', 'arrived first', 'arrived during the repaint'],
     'nothing was lost across the repaint, and nothing was duplicated',
   );
+});
+
+test('declining to be named is an answer, not a failure', async () => {
+  // v0 has no accounts: naming yourself is a claim, the same one `identify`
+  // makes for an agent. So a cancelled prompt must not look like an error, and
+  // must not create a participant called "" or "null".
+  const calls: string[] = [];
+  const identify = async (name: string) => {
+    calls.push(name);
+    return { participant: { id: 'p9', name } };
+  };
+
+  assert.equal(await ensureIdentified({ ask: () => null, identify }), null, 'cancelled');
+  assert.equal(await ensureIdentified({ ask: () => '   ', identify }), null, 'whitespace is not a name');
+  assert.deepEqual(calls, [], 'nothing was created for someone who declined');
+
+  assert.deepEqual(await ensureIdentified({ ask: () => '  Rowan  ', identify }), { id: 'p9', name: 'Rowan' });
+  assert.deepEqual(calls, ['Rowan'], 'the name is trimmed before it becomes an identity');
+});
+
+test('a disabled composer always says why, and a notice is not an error banner', () => {
+  const closed = composerProps(null, null, null);
+  assert.equal(closed.disabled, true);
+  assert.ok(String(closed.disabledReason).length > 0, 'never quiet without a reason');
+  assert.match(String(closed.disabledReason), /room/i, 'and the reason names the next action');
+
+  const room = { id: 'r1', name: 'protocol' };
+  const anonymous = composerProps(room, null, null);
+  assert.equal(anonymous.disabled, false);
+  assert.equal(anonymous.placeholder, 'Message #protocol', 'the placeholder names the destination');
+  assert.match(String(anonymous.hint), /asked for a name/, 'says what send will actually do first');
+
+  // Named: the hint goes back to the component's own keyboard default.
+  assert.equal(composerProps(room, { id: 'p1', name: 'Rowan' }, null).hint, null);
+
+  // A refusal rides as `notice` — a private row, not a banner, because the
+  // server returned it to this person and it is not a room event.
+  const refused = composerProps(room, null, 'join "protocol" before posting to it');
+  assert.match(String(refused.notice), /before posting/);
+  assert.equal(refused.disabled, false, 'a refusal does not lock the field you need to retry from');
+});
+
+/** A sender wired to spies, with every port overridable. */
+function harness(overrides: Record<string, any> = {}) {
+  const calls: { joined: string[]; posted: [string, string][]; identified: number; forgot: number } = {
+    joined: [], posted: [], identified: 0, forgot: 0,
+  };
+  const box = { room: 'protocol', me: { id: 'p1', name: 'Rowan' } as any, draft: '', notice: null as any, settled: 0 };
+  const send = createSender({
+    room: () => box.room,
+    me: () => box.me,
+    setMe: (who: any) => { box.me = who; },
+    draft: () => box.draft,
+    setDraft: (v: string) => { box.draft = v; },
+    setNotice: (m: any) => { box.notice = m; },
+    settled: () => { box.settled += 1; },
+    identify: async () => { calls.identified += 1; return { id: 'p2', name: 'Rowan' }; },
+    join: async (room: string) => { calls.joined.push(room); },
+    post: async (room: string, _id: string, body: string) => { calls.posted.push([room, body]); },
+    isStaleIdentity,
+    forget: () => { calls.forgot += 1; },
+    ...overrides,
+  });
+  return { send, calls, box };
+}
+
+test('the room is fixed when you press send, not when the request lands', async () => {
+  // Switching rooms mid-send would otherwise join one room and post to
+  // another — and if you were already a member of the second, the message
+  // lands in the wrong room with nothing on screen to say so.
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => { release = r; });
+  const h = harness({ join: async (room: string) => { await gate; h.calls.joined.push(room); } });
+
+  h.box.draft = 'about the wire contract';
+  const inFlight = h.send('about the wire contract');
+  h.box.room = 'web-ui';           // the person clicks another room
+  release();
+  await inFlight;
+
+  assert.deepEqual(h.calls.joined, ['protocol']);
+  assert.deepEqual(h.calls.posted, [['protocol', 'about the wire contract']]);
+});
+
+test('a second Enter while the first is in flight does not post twice', async () => {
+  // Joining is idempotent; posting is not. A duplicate here is two permanent
+  // messages in the record.
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => { release = r; });
+  const h = harness({ post: async (room: string, _id: string, body: string) => { await gate; h.calls.posted.push([room, body]); } });
+
+  const first = h.send('once');
+  const second = h.send('once');
+  release();
+  await Promise.all([first, second]);
+
+  assert.equal(h.calls.posted.length, 1, 'the second submission was refused, not queued');
+});
+
+test('a draft typed while the post was in flight is not swallowed', async () => {
+  // The field stays editable on purpose, so a failed post keeps your words —
+  // which means the next draft may already exist by the time this succeeds.
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => { release = r; });
+  const h = harness({ post: async () => { await gate; } });
+
+  h.box.draft = 'first';
+  const inFlight = h.send('first');
+  h.box.draft = 'first and a second thought';   // typed while pending
+  release();
+  await inFlight;
+
+  assert.equal(h.box.draft, 'first and a second thought', 'only the submitted text may be cleared');
+
+  // The ordinary case still clears.
+  h.box.draft = 'plain';
+  await h.send('plain');
+  assert.equal(h.box.draft, '');
+});
+
+test('an identity the server has forgotten is replaced, once', async () => {
+  // Point the server at a different or recreated database and this browser
+  // still holds a UUID that names nobody. Without this the same failure
+  // repeats forever and the only fix is clearing site data by hand.
+  let attempts = 0;
+  const h = harness({
+    join: async (room: string) => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('unknown participant: "p1" — call identify first');
+      h.calls.joined.push(room);
+    },
+  });
+
+  await h.send('after a database reset');
+
+  assert.equal(h.calls.forgot, 1, 'the dead id was discarded');
+  assert.equal(h.calls.identified, 1, 'and a new one asked for');
+  assert.deepEqual(h.calls.posted, [['protocol', 'after a database reset']]);
+  assert.equal(h.box.notice, null, 'recovery is silent — it was not the person\'s mistake');
+});
+
+test('a refusal that is not about identity is shown, not retried', async () => {
+  const h = harness({ join: async () => { throw new Error('join "protocol" before posting to it'); } });
+  await h.send('nope');
+
+  assert.equal(h.calls.identified, 0, 'no identity churn for an unrelated refusal');
+  assert.match(String(h.box.notice), /before posting/, 'the server said it better than we would');
+  assert.equal(h.box.draft, '', 'nothing was submitted, so nothing was cleared');
+  assert.equal(h.box.settled, 1, 'the field is released exactly once, whatever happened');
 });

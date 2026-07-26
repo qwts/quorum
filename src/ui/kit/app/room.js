@@ -11,8 +11,11 @@
 // poll, and no place to add one.
 
 import { openFeed } from './feed.js';
-import { paintRoom } from './api.js';
+import { api, paintRoom } from './api.js';
+import { ensureIdentified, forget, isStaleIdentity, remembered } from './me.js';
 import { apply, applyAll, emptyState, roomByName, seed } from './store.js';
+import { composerProps } from './composer.js';
+import { createSender } from './posting.js';
 import { rosterView, sidebarView, streamView, topBarView } from './views.js';
 
 /**
@@ -39,10 +42,38 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
     topbar: doc.getElementById('topbar'),
     stream: doc.getElementById('stream'),
     roster: doc.getElementById('roster'),
+    composer: doc.getElementById('composer'),
   };
+
+  // Built once and never replaced: it holds the draft. Every other region is
+  // rebuilt from the model on each render, which is only safe because none of
+  // them holds anything the person was in the middle of.
+  const composer = /** @type {any} */ (doc.createElement('q-composer'));
+  const send = createSender({
+    room: () => openRoom,
+    me: () => me,
+    setMe: (who) => { me = who; },
+    draft: () => composer.value,
+    setDraft: (value) => { composer.value = value; },
+    setNotice: (message) => { notice = message; },
+    settled: () => render(),
+    // The browser's own prompt: the design system ships no dialog, and a
+    // screen inventing one is the thing this library exists to prevent.
+    identify: () => ensureIdentified({ ask: (message) => win.prompt(message), identify: api.identify }),
+    join: api.join,
+    post: api.post,
+    isStaleIdentity,
+    forget,
+  });
+  composer.addEventListener('send', (/** @type {any} */ event) => void send(event.detail.value));
+  regions.composer?.replaceChildren(composer);
 
   let state = emptyState();
   let openRoom = room;
+  /** Who this browser is, once it has said. @type {{id: string, name: string}|null} */
+  let me = remembered();
+  /** A refusal meant for this person alone — never a room event. @type {string|null} */
+  let notice = null;
   let status = /** @type {'live'|'reconnecting'} */ ('reconnecting');
   /** Non-null while a paint is in flight. See `receive`. @type {any[]|null} */
   let buffered = null;
@@ -52,6 +83,10 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
     regions.sidebar?.replaceChildren(sidebarView(state, openRoom, pick));
     regions.topbar?.replaceChildren(topBarView(state, current, status));
     regions.stream?.replaceChildren(streamView(state, current));
+    // Assigned onto the live element rather than rebuilding it: the composer
+    // holds a draft, a caret and focus, and is the one region that must
+    // survive a repaint.
+    Object.assign(composer, composerProps(current, me, notice));
     renderRoster();
   };
 
@@ -99,6 +134,17 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
     }
   }
 
+  /**
+   * Post what was typed.
+   *
+   * Nothing is painted optimistically. The message returns on the feed like
+   * anyone else's, so what this browser shows and what an agent reads are the
+   * same thing arriving by the same route — an optimistic row would be the one
+   * place the two could disagree, and it would disagree exactly when the write
+   * failed.
+   *
+   * @param {string} body
+   */
   /** Switching rooms repaints from the model — the feed is room-agnostic and keeps running. */
   const pick = (/** @type {string} */ name) => {
     if (name === openRoom) return;
@@ -112,6 +158,7 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
   /** @param {string} name */
   function show(name) {
     openRoom = name;
+    notice = null; // a refusal was about the room you just left
     doc.title = `#${name} · quorum`;
     void paint(name).then(render);
   }
