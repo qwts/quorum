@@ -6,26 +6,11 @@
 // those would mean reimplementing, slightly worse, something the platform is
 // already doing correctly.
 //
-// What this module does add is a single subscription surface: the caller gets
-// every event through one callback regardless of kind, because the fold that
-// consumes them is a table lookup and does not want a listener per kind.
-
-/** Domain event kinds the server can emit. Each arrives as its own SSE event name. */
-const KINDS = [
-  'participant_identified',
-  'room_created',
-  'room_joined',
-  'message',
-  'claim_granted',
-  'claim_renewed',
-  'claim_released',
-  'claim_expired',
-  'deliberation_opened',
-  'voting_opened',
-  'ballot_cast',
-  'deliberation_converged',
-  'deliberation_failed',
-];
+// What this module adds is a single subscription surface: the caller gets every
+// event through one callback regardless of kind, because the fold that consumes
+// them is a table lookup and does not want a listener per kind — and because a
+// per-kind listener list is a second place to update when the server grows an
+// event, which is a place someone will forget.
 
 /**
  * Open the feed at `after` and call `onEvent` for every domain event.
@@ -49,7 +34,12 @@ export function openFeed({ after, onEvent, onStatus }) {
     }
   };
 
-  for (const kind of KINDS) source.addEventListener(kind, deliver);
+  // One listener, every kind. The server sends domain events under SSE's
+  // default `message` name precisely so this works: a listener list would have
+  // to be updated in lockstep with the server, and a tab open across a deploy
+  // would silently drop the kind it had not been taught — which is the exact
+  // failure the fold's unknown-kind handling exists to survive.
+  source.addEventListener('message', deliver);
 
   // Not a domain event: the server states where the reader is on connect, so a
   // page knows its stream is established rather than merely not-yet-failing.

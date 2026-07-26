@@ -11,6 +11,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { checkDesignDrift, designVersion } from '../src/ui/drift.ts';
@@ -19,7 +20,8 @@ import { checkDesignDrift, designVersion } from '../src/ui/drift.ts';
 import { optionChipProps } from '../src/ui/lib/phase.js';
 import { serveUi } from '../src/ui/serve.ts';
 
-const UI = new URL('../src/ui/', import.meta.url).pathname;
+// fileURLToPath, not .pathname: a percent-encoded path breaks every read.
+const UI = fileURLToPath(new URL('../src/ui/', import.meta.url));
 
 function read(...parts: string[]): string {
   return readFileSync(join(UI, ...parts), 'utf8');

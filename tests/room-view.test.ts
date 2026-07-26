@@ -124,3 +124,39 @@ test('numbers are exact, because rounding them together hides the difference', (
   const noon = new Date(2026, 6, 25, 9, 5).getTime();
   assert.equal(clock(noon), '09:05', 'zero-padded, so a column of times lines up');
 });
+
+test('a repaint that lands behind the feed does not swallow what arrived meanwhile', () => {
+  // The room-switch race, as a unit. A paint snapshots at seq S and lands
+  // milliseconds later; an event arriving in that window has a seq above S.
+  // If the snapshot kept the higher cursor, its effect would be discarded by
+  // the seed *and* its replay rejected as already-seen — the message would
+  // vanish permanently, and only for whoever switched rooms at the wrong
+  // moment. So `seed` moves the cursor back to the snapshot, and the caller
+  // drains what it held across the paint.
+  const live = apply(painted(), event(11, 'message', {
+    message: { id: 2, roomId: 'r1', participantId: 'p2', body: 'arrived first', deliberationId: null, createdAt: 0 },
+  }, 'r1'));
+  assert.equal(live.seq, 11);
+
+  const heldBack = { id: 3, roomId: 'r1', participantId: 'p1', body: 'arrived during the repaint', deliberationId: null, createdAt: 0 };
+
+  // The snapshot was stamped at 10, before either message.
+  const reseeded = seed(live, {
+    seq: 10,
+    rooms: [ROOM],
+    participants: [CODEX, DANA],
+    claims: [],
+    messages: [{ id: 1, roomId: 'r1', participantId: 'p1', body: 'first', deliberationId: null, createdAt: 0 }],
+  });
+  assert.equal(reseeded.seq, 10, 'the cursor follows the data back, or the buffer cannot drain');
+
+  const drained = applyAll(reseeded, [
+    event(11, 'message', { message: { id: 2, roomId: 'r1', participantId: 'p2', body: 'arrived first', deliberationId: null, createdAt: 0 } }, 'r1'),
+    event(12, 'message', { message: heldBack }, 'r1'),
+  ]);
+  assert.deepEqual(
+    messagesIn(drained, 'r1').map((m: any) => m.body),
+    ['first', 'arrived first', 'arrived during the repaint'],
+    'nothing was lost across the repaint, and nothing was duplicated',
+  );
+});

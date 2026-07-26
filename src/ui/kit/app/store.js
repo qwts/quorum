@@ -41,7 +41,12 @@ export function emptyState() {
  * @returns {State}
  */
 export function seed(state, painted) {
-  const next = { ...state, seq: Math.max(state.seq, painted.seq ?? 0) };
+  // The snapshot's seq wins, even when it is *behind* where the fold had got
+  // to. A repaint replaces these maps with data as of that seq, so the cursor
+  // has to move back with them — otherwise events between the stamp and now
+  // are neither in the snapshot nor replayable, and vanish. The caller holds
+  // those events across the paint and drains them after (see room.js).
+  const next = { ...state, seq: painted.seq ?? state.seq };
   if (painted.rooms) next.rooms = byId(painted.rooms);
   if (painted.participants) next.participants = byId(painted.participants);
   if (painted.claims) next.claims = byId(painted.claims);

@@ -29,7 +29,10 @@ export function clock(epochMs) {
 export function remaining(expiresAtMs, nowMs) {
   const ms = expiresAtMs - nowMs;
   if (ms <= 0) return 'expired';
-  const seconds = Math.round(ms / 1000);
+  // Ceil, not round: 400ms rounds to zero and would print "0s left" on a
+  // lease that is still held. A countdown that reaches zero before the thing
+  // expires is a countdown nobody can act on.
+  const seconds = Math.ceil(ms / 1000);
   if (seconds < 60) return `${seconds}s left`;
   return `${Math.floor(seconds / 60)}m left`;
 }

@@ -19,6 +19,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /** Lines. Chosen because it is unarguable, not because it is subtle. */
 const CEILING = 260;
@@ -53,7 +54,9 @@ const EXCEPTIONS: Record<string, { limit: number; why: string }> = {
   },
 };
 
-const ROOT = new URL('..', import.meta.url).pathname;
+// fileURLToPath, not .pathname: a repo checked out under a path with a
+// space arrives percent-encoded and every read fails.
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const SEARCH = ['src', 'tests'];
 const EXTENSIONS = ['.ts', '.js'];
 

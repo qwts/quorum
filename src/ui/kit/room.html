@@ -8,7 +8,10 @@
     <style>
       /* Fixed desktop rails, never reflowed (requirements §1.3). Every value is
          a token — a literal here is a check failure, not a matter of taste. */
-      body { height: 100vh; overflow: hidden; }
+      /* Vertical only. `overflow: hidden` would clip the fixed rails in a
+         narrow window and make the right of the page unreachable — which is
+         not "never reflowed", it is "never reachable". */
+      body { height: 100vh; overflow-y: hidden; overflow-x: auto; }
       .app { display: flex; height: 100vh; }
 
       .rail { width: var(--rail-nav); flex: 0 0 auto; border-right: var(--border-width) solid var(--line-1); display: flex; flex-direction: column; align-items: center; padding-top: var(--sp-5); gap: var(--sp-5); }

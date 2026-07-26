@@ -61,7 +61,10 @@ async function stream(path: string, want: number, act?: () => void): Promise<{ e
         const fields = Object.fromEntries(
           raw.split('\n').map((line) => [line.slice(0, line.indexOf(':')), line.slice(line.indexOf(':') + 1).trim()]),
         );
-        frames.push({ event: fields.event!, id: fields.id!, data: JSON.parse(fields.data!) });
+        const data = JSON.parse(fields.data!);
+        // Domain events arrive unnamed so one listener catches every kind,
+        // including ones a page has not been taught; the kind is in the body.
+        frames.push({ event: fields.event ?? data.kind, id: fields.id!, data });
       }
 
       // Act only once the stream is established, so the event we are waiting
@@ -110,7 +113,7 @@ test('a fresh stream tails from the head; only ?after= replays', async () => {
 
   const replay = await stream('/api/events?after=0', 2);
   assert.equal(replay[0]!.data.after, 0, '?after=0 is an explicit ask for everything, and is honoured');
-  assert.ok(replay.slice(1).some((f) => f.event !== 'cursor'), 'history actually arrives');
+  assert.ok(replay.slice(1).some((f) => f.data.kind), 'history actually arrives');
 });
 
 test('a page can open its stream where its first paint ended, with no gap', async () => {
@@ -126,7 +129,7 @@ test('a page can open its stream where its first paint ended, with no gap', asyn
   const arrived = await stream(`/api/events?after=${painted.body.seq}`, 2, () => {
     quorum.postMessage({ room: 'protocol', participantId: dana.id, body: 'posted while the page was painting' });
   });
-  const posted = arrived.find((f) => f.event === 'message');
+  const posted = arrived.find((f) => f.data.kind === 'message');
   assert.equal(posted?.data.payload.message.body, 'posted while the page was painting');
 });
 
@@ -160,7 +163,7 @@ test('a human watching sees an agent post at the same seq the agent wrote it', a
   assert.equal(frames[0]!.event, 'cursor');
   assert.equal(frames[0]!.data.after, before);
 
-  const posted = frames.find((f) => f.event === 'message');
+  const posted = frames.find((f) => f.data.kind === 'message');
   assert.ok(posted, 'the message the agent wrote arrived on the human stream');
   assert.equal(posted.data.payload.message.id, written);
   assert.equal(posted.data.payload.from, 'codex:api');
@@ -205,4 +208,32 @@ test('watching a room advances nobody else\'s cursor', async () => {
 
   assert.deepEqual(quorum.cursorFor(dana.id), beforeDana);
   assert.deepEqual(quorum.cursorFor(codex.id), beforeCodex);
+});
+
+test('a first paint gets the end of a long room, not the beginning', async () => {
+  // The domain reads forward from an id, so one call with limit 100 in a room
+  // of 300 returns messages 1-100 — and the stream then tails from the head,
+  // so 101-300 are never painted and never replayed. A silent hole in the
+  // middle of the room, which is the worst shape this bug could have.
+  const long = quorum.createRoom({ name: 'long', topic: 'history', by: dana.id });
+  for (let i = 1; i <= 250; i += 1) {
+    quorum.postMessage({ room: 'long', participantId: dana.id, body: `message ${i}` });
+  }
+
+  const painted = await get('/api/rooms/long/messages');
+  const bodies = painted.body.messages.map((m: any) => m.body);
+  assert.equal(bodies.length, 100, 'still a bounded window');
+  assert.equal(bodies.at(-1), 'message 250', 'the newest message is on screen');
+  assert.equal(bodies[0], 'message 151', 'and the window is the tail, not the head');
+  assert.equal(long.name, 'long');
+
+  // Walking forward explicitly still works, for a caller that knows where it
+  // is. Message ids are global rather than per-room, so the cursor has to come
+  // from a message, never from counting.
+  const first = painted.body.messages[0].id;
+  const walked = await get(`/api/rooms/long/messages?after=${first}&limit=2`);
+  assert.deepEqual(
+    walked.body.messages.map((m: any) => m.body),
+    ['message 152', 'message 153'],
+  );
 });
