@@ -52,7 +52,8 @@ export const api = {
   rooms: () => read('/api/rooms'),
   participants: () => read('/api/participants'),
   claims: () => read('/api/claims'),
-  decisions: (/** @type {string} [room] */ room) => read(`/api/decisions${room ? `?room=${encodeURIComponent(room)}` : ''}`),
+  decisions: (/** @type {string|undefined} */ room) => read(`/api/decisions${room ? `?room=${encodeURIComponent(room)}` : ''}`),
+  decision: (/** @type {string} */ deliberationId) => read(`/api/decisions/${encodeURIComponent(deliberationId)}`),
   messages: (/** @type {string} */ room) => read(`/api/rooms/${encodeURIComponent(room)}/messages`),
 
   identify: (/** @type {string} */ name) => write('/api/identify', { name }),

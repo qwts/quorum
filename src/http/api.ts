@@ -62,6 +62,22 @@ function recentMessages(quorum: Quorum, room: string, limit: number): unknown[] 
 }
 
 /**
+ * Decode a path segment, refusing a malformed escape instead of throwing.
+ *
+ * `decodeURIComponent('%')` throws URIError, which is not a QuorumError and so
+ * escapes the handler below as a 500 carrying an internal message — the caller
+ * told the server the request broke. The write path already guards this; a
+ * read is no less reachable.
+ */
+function segment(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    throw new QuorumError('that path is not a valid name');
+  }
+}
+
+/**
  * Handle a read request. Returns false when the path is not ours, so the
  * caller keeps ownership of what a 404 means.
  */
@@ -103,9 +119,18 @@ export function serveApi(req: IncomingMessage, res: ServerResponse, url: URL, qu
       return true;
     }
 
+    // One decision in full. The list carries summaries — enough to show a
+    // history — and the record itself is fetched only when someone opens it,
+    // because it names every ballot and every silent participant.
+    const decision = /^decisions\/([^/]+)$/.exec(route);
+    if (decision) {
+      send(res, 200, { seq, decision: quorum.getDecision({ deliberationId: segment(decision[1]!) }) });
+      return true;
+    }
+
     const messages = /^rooms\/([^/]+)\/messages$/.exec(route);
     if (messages) {
-      const room = decodeURIComponent(messages[1]!);
+      const room = segment(messages[1]!);
       // With `after`, the caller is walking forward and knows where it is.
       // Without it, this is a first paint and wants the end of the room.
       const after = positiveInt(url.searchParams.get('after'), 0) || undefined;
