@@ -11,6 +11,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { Quorum } from '../domain/quorum.ts';
 import { serveApi } from '../http/api.ts';
+import { serveWrites } from '../http/write.ts';
 import { closeEventStreams, serveEvents } from '../http/events.ts';
 import { serveUi } from '../ui/serve.ts';
 import { PARTICIPANT_CONTRACT } from './contract.ts';
@@ -107,6 +108,9 @@ export async function startServer(options: {
     // agents read. The stream comes first: it holds the connection open, so
     // it must never fall through to a handler that would answer it.
     if (serveEvents(req, res, url, options.quorum)) return;
+    // Writes first: it owns every non-GET under /api/, so the read API below
+    // only ever sees a GET and stays read-only by construction.
+    if (await serveWrites(req, res, url, options.quorum)) return;
     if (serveApi(req, res, url, options.quorum)) return;
 
     if (url.pathname !== MCP_PATH) {
