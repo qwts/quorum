@@ -158,6 +158,52 @@ export interface QDecisionCard extends HTMLElement {
   openable?: boolean;
 }
 
+/** A labelled secondary action beside the field — `propose`, `claim`, `attach a record`. */
+export interface ComposerAction {
+  /** Always a word. An icon never appears alone here. */
+  label: string;
+  /** Optional already-rendered glyph — the design system ships no icon set. */
+  icon?: Node;
+  /** Brass label. At most one action per composer. */
+  accent?: boolean;
+  /** Called on click. A screen may listen for the `action` event instead. */
+  onClick?: () => void;
+}
+
+/**
+ * The participant's one input: room stream, DM thread and the challenge window
+ * all use this and nothing else.
+ *
+ * It posts a **message** and never casts a ballot — that is `q-vote-chip`. A
+ * stance typed here during the challenge phase would be public voting, after
+ * which hidden ballots protect nothing (deliberation.md §6).
+ *
+ * Fires `send` (`detail.value`) and `action` (`detail.label`). The draft is the
+ * `value` property, never an attribute; the screen clears it once the server
+ * has the message, so a failed post does not eat what was typed.
+ */
+export interface QComposer extends HTMLElement {
+  /** The draft. Read it on `send`; set it to `''` once the post lands. */
+  value: string;
+  /** Sentence case, names the destination: `Message #protocol`, `Message Dana`. */
+  placeholder?: string;
+  /** Mono footnote. Defaults to the keyboard hint, or the considerations rule when `phase` is `challenging`. */
+  hint?: string;
+  /** Set only while a deliberation is open. Draws the phase word in its hue and a hued top edge. */
+  phase?: Phase;
+  /** Deadline as the server reports it, e.g. `14:35`. */
+  phaseEndsAt?: string;
+  /** A response the room did not see — a claim refusal, a rejected post. Drawn as a private row. */
+  notice?: string;
+  /** No posting rights, or nothing to post into. */
+  disabled?: boolean;
+  /** Ship this whenever `disabled`: say the limit out loud, ending in the next action. */
+  disabledReason?: string;
+  /** Field height in rows. 2 in a stream, 3 in the challenge window. */
+  rows?: number;
+  actions?: ComposerAction[];
+}
+
 declare global {
   interface HTMLElementTagNameMap {
     'q-identity-chip': QIdentityChip;
@@ -167,5 +213,6 @@ declare global {
     'q-dissent-badge': QDissentBadge;
     'q-proposal-card': QProposalCard;
     'q-decision-card': QDecisionCard;
+    'q-composer': QComposer;
   }
 }

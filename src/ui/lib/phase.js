@@ -89,3 +89,33 @@ export function optionChipProps(option, phase) {
     total: concealTally ? null : (option.total ?? null),
   };
 }
+
+/**
+ * The composer's footnote, given what the screen passed.
+ *
+ * Pure, and here rather than inside `render()`, because the rule it encodes is
+ * normative copy the protocol depends on: during a challenge window the hint
+ * **must** say that challenges argue considerations. A stance typed into a
+ * composer is public voting, and once some ballots are public the hidden ones
+ * protect nothing (deliberation.md §6) — so a permissive default hint in that
+ * phase would quietly undo the concealment the whole vote rests on.
+ *
+ * The other half is the disabled case: a quiet field with no explanation is
+ * this component's only real failure mode, so there is always a sentence, even
+ * when the screen forgets to supply one.
+ *
+ * An explicit `hint` still wins. The design states the no-permissive-hint rule
+ * as guidance to the screen author, not as something the component overrides —
+ * implementing it as enforcement would be extending the design, not adapting
+ * it.
+ *
+ * @param {{disabled?: boolean, disabledReason?: string, hint?: string, phase?: string}} input
+ * @returns {string}
+ */
+export function composerHint({ disabled, disabledReason, hint, phase } = {}) {
+  if (disabled) return disabledReason || 'Posting is unavailable here.';
+  if (hint) return hint;
+  return phase === 'challenging'
+    ? 'challenges argue considerations — cost, precedent, constraint, timing. Ballots come later and stay hidden.'
+    : 'Enter to send · Shift+Enter for a newline';
+}

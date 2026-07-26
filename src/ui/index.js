@@ -1,4 +1,4 @@
-// The Quorum UI library — one import, seven components, no build step.
+// The Quorum UI library — one import, eight components, no build step.
 //
 //   <link rel="stylesheet" href="/ui/styles.css">
 //   <script type="module" src="/ui/index.js"></script>
@@ -15,10 +15,12 @@ import './components/vote-chip.js';
 import './components/dissent-badge.js';
 import './components/proposal-card.js';
 import './components/decision-card.js';
+import './components/composer.js';
 
 export { h, meta, QuorumElement } from './lib/element.js';
 export { HUMAN_HUE, identityHue, participantHue, resetIdentityHues } from './lib/identity.js';
-export { FAILED, LIVE_PHASES, PHASES, isTerminal, phaseColor, phaseStep, phaseTint } from './lib/phase.js';
+export { sendsOnEnter } from './lib/keys.js';
+export { FAILED, LIVE_PHASES, PHASES, composerHint, isTerminal, optionChipProps, phaseColor, phaseStep, phaseTint } from './lib/phase.js';
 
 export { IdentityChip } from './components/identity-chip.js';
 export { MessageRow } from './components/message-row.js';
@@ -27,3 +29,4 @@ export { VoteChip } from './components/vote-chip.js';
 export { DissentBadge } from './components/dissent-badge.js';
 export { ProposalCard } from './components/proposal-card.js';
 export { DecisionCard } from './components/decision-card.js';
+export { Composer } from './components/composer.js';
