@@ -10,6 +10,8 @@ import assert from 'node:assert/strict';
 
 import { apply, applyAll, emptyState, liveClaims, messagesIn, roomByName, seed } from '../src/ui/kit/app/store.js';
 import { clock, count, remaining, scopeOf } from '../src/ui/kit/app/format.js';
+import { ensureIdentified } from '../src/ui/kit/app/me.js';
+import { composerProps } from '../src/ui/kit/app/composer.js';
 
 const ROOM = { id: 'r1', name: 'protocol', topic: 'the wire contract', decisionRule: 'majority', members: 2 };
 const CODEX = { id: 'p1', name: 'codex:api', harness: 'codex', repo: null, branch: null };
@@ -159,4 +161,44 @@ test('a repaint that lands behind the feed does not swallow what arrived meanwhi
     ['first', 'arrived first', 'arrived during the repaint'],
     'nothing was lost across the repaint, and nothing was duplicated',
   );
+});
+
+test('declining to be named is an answer, not a failure', async () => {
+  // v0 has no accounts: naming yourself is a claim, the same one `identify`
+  // makes for an agent. So a cancelled prompt must not look like an error, and
+  // must not create a participant called "" or "null".
+  const calls: string[] = [];
+  const identify = async (name: string) => {
+    calls.push(name);
+    return { participant: { id: 'p9', name } };
+  };
+
+  assert.equal(await ensureIdentified({ ask: () => null, identify }), null, 'cancelled');
+  assert.equal(await ensureIdentified({ ask: () => '   ', identify }), null, 'whitespace is not a name');
+  assert.deepEqual(calls, [], 'nothing was created for someone who declined');
+
+  assert.deepEqual(await ensureIdentified({ ask: () => '  Rowan  ', identify }), { id: 'p9', name: 'Rowan' });
+  assert.deepEqual(calls, ['Rowan'], 'the name is trimmed before it becomes an identity');
+});
+
+test('a disabled composer always says why, and a notice is not an error banner', () => {
+  const closed = composerProps(null, null, null);
+  assert.equal(closed.disabled, true);
+  assert.ok(String(closed.disabledReason).length > 0, 'never quiet without a reason');
+  assert.match(String(closed.disabledReason), /room/i, 'and the reason names the next action');
+
+  const room = { id: 'r1', name: 'protocol' };
+  const anonymous = composerProps(room, null, null);
+  assert.equal(anonymous.disabled, false);
+  assert.equal(anonymous.placeholder, 'Message #protocol', 'the placeholder names the destination');
+  assert.match(String(anonymous.hint), /asked for a name/, 'says what send will actually do first');
+
+  // Named: the hint goes back to the component's own keyboard default.
+  assert.equal(composerProps(room, { id: 'p1', name: 'Rowan' }, null).hint, null);
+
+  // A refusal rides as `notice` — a private row, not a banner, because the
+  // server returned it to this person and it is not a room event.
+  const refused = composerProps(room, null, 'join "protocol" before posting to it');
+  assert.match(String(refused.notice), /before posting/);
+  assert.equal(refused.disabled, false, 'a refusal does not lock the field you need to retry from');
 });
