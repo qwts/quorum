@@ -327,21 +327,49 @@ test('the printed URLs come from the certificate, not from the bind address', ()
 });
 
 test('an unexpected failure tells the operator, not the caller', async () => {
-  // Every *expected* refusal is answered in words by the handler that
-  // recognised it. Anything reaching the last-resort catch is a bug, so its
-  // message names the inside of this process — a path, a SQL fragment, a
-  // stack. A caller cannot act on a bug; an operator can, so the detail goes
-  // to the log and the response says only that it happened.
+  // Reaching the last-resort catch takes a *bug*, not a bad request: every
+  // expected refusal is answered in words by the handler that recognised it.
+  // So the failure is injected — a read that throws something the API does not
+  // recognise, which is exactly the shape whose message would name a path, a
+  // SQL fragment, or a stack.
   //
   // Flagged by CodeQL as js/stack-trace-exposure once code scanning was turned
   // on, in the one repo of the fleet that had it off.
-  const response = await fetch(`${origin}/api/rooms`, {
-    method: 'PATCH',
-    headers: { 'content-type': 'application/json' },
-    body: '{}',
+  const broken = new Proxy(quorum, {
+    get(target, prop, receiver) {
+      if (prop === 'listRooms') {
+        return () => {
+          throw new Error('ENOENT: no such file, open /Users/secret/.quorum/quorum.db');
+        };
+      }
+      return Reflect.get(target, prop, receiver);
+    },
   });
-  const body = (await response.json()) as { error: string };
 
-  assert.equal(response.status, 405, 'a known-bad method is still answered properly');
-  assert.ok(!/\bat \/|\.ts:\d+|node:internal/.test(body.error), 'no stack, no path, no line number');
+  const sabotaged = await startServer({ quorum: broken as typeof quorum, tls: null });
+  const logged: string[] = [];
+  const realWrite = process.stderr.write.bind(process.stderr);
+  process.stderr.write = ((chunk: unknown) => {
+    logged.push(String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${sabotaged.port}/api/rooms`);
+    const body = (await response.json()) as { error: string };
+
+    assert.equal(response.status, 500, 'a bug is a server fault, and says so');
+    assert.match(body.error, /the server failed to handle that request/);
+    assert.ok(!body.error.includes('ENOENT'), 'the internal message does not reach the caller');
+    assert.ok(!body.error.includes('/Users/secret'), 'nor the path inside it');
+    assert.ok(!/\.ts:\d+|node:internal/.test(body.error), 'nor a stack');
+
+    // The detail is not discarded — it goes where someone can act on it.
+    const written = logged.join('');
+    assert.match(written, /ENOENT/, 'the operator gets the real error');
+    assert.match(written, /\/Users\/secret/, 'including the part the caller must not see');
+  } finally {
+    process.stderr.write = realWrite;
+    await sabotaged.close();
+  }
 });
