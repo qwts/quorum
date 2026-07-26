@@ -13,6 +13,8 @@ import { clock, count, remaining, scopeOf } from '../src/ui/kit/app/format.js';
 import { ensureIdentified, isStaleIdentity } from '../src/ui/kit/app/me.js';
 import { createSender } from '../src/ui/kit/app/posting.js';
 import { composerProps } from '../src/ui/kit/app/composer.js';
+import { recordProps } from '../src/ui/kit/app/record.js';
+import { isFresher, withRoomNames } from '../src/ui/kit/app/history.js';
 
 const ROOM = { id: 'r1', name: 'protocol', topic: 'the wire contract', decisionRule: 'majority', members: 2 };
 const CODEX = { id: 'p1', name: 'codex:api', harness: 'codex', repo: null, branch: null };
@@ -399,4 +401,74 @@ test('a room running two proposals shows both, soonest deadline first', () => {
   // Closing one leaves the other alone.
   const closed = apply(state, event(13, 'deliberation_converged', { deliberationId: 'd2', chosen: 'x' }, 'r1'));
   assert.deepEqual(liveDeliberations(closed, 'r1').map((d: any) => d.id), ['d1']);
+});
+
+const RECORD = {
+  deliberationId: 'd-abcdef12', question: 'Do we gate the tool schema behind a version field?',
+  outcome: 'converged', chosen: 0, failureKind: null, reason: 'Carried 2 of 3 cast.',
+  closedAt: 0, rule: 'majority', options: ['Add it now', 'Defer to v1'], tally: [2, 1],
+  eligible: [{ id: 'p1', name: 'codex:api' }, { id: 'p2', name: 'Dana' }, { id: 'p3', name: 'devin:tests' }, { id: 'p4', name: 'cursor:web-ui' }],
+  ballots: [
+    { participantId: 'p1', name: 'codex:api', choice: 0, dissent: null },
+    { participantId: 'p2', name: 'Dana', choice: 0, dissent: null },
+    { participantId: 'p3', name: 'devin:tests', choice: 1, dissent: 'The field defaults on, which ships the risk the challenge was about.' },
+  ],
+};
+
+test('a record names who never cast, not just how many did', () => {
+  // "3 of 4 ballots" is a number. Who the fourth was is the record — and it is
+  // the part that says whether the room decided or whoever happened to be awake.
+  const props = recordProps(RECORD, RECORD);
+  assert.deepEqual(props.silent, ['cursor:web-ui']);
+  assert.equal(props.outcome, 'Add it now', 'the winner is named, not its index');
+  assert.equal(props.variant, 'full');
+
+  // Every option appears, including ones nobody chose — a tally listing only
+  // winners is an advert rather than a record.
+  assert.deepEqual(props.options.map((o: any) => [o.option, o.count]), [['Add it now', 2], ['Defer to v1', 1]]);
+  assert.deepEqual(props.options[0]?.voters, ['codex:api', 'Dana']);
+
+  assert.deepEqual(props.dissents, [{ name: 'devin:tests', note: RECORD.ballots[2]?.dissent }]);
+});
+
+test('an unopened record shows a summary and claims no tally', () => {
+  // The list carries summaries; ballots and silent participants are fetched
+  // only when someone opens one. Guessing at them from a summary would put
+  // names on screen that the response never contained.
+  const props = recordProps({ deliberationId: 'd-99', question: 'q?', outcome: 'failed', failureKind: 'quorum_absent', reason: 'r', closedAt: 0 });
+  assert.equal(props.variant, 'summary');
+  assert.deepEqual(props.options, []);
+  assert.deepEqual(props.silent, []);
+  assert.deepEqual(props.dissents, []);
+  assert.equal(props.outcome, null, 'a failure chose nothing, and says so rather than nothing');
+  assert.equal(props.failureKind, 'quorum_absent');
+});
+
+test('a record in the all-rooms view says which room decided it', () => {
+  // The list endpoint carries roomId and no name. Two rooms asking similar
+  // questions is not hypothetical with a fleet of agents on one codebase, and
+  // a record you cannot place is a record you cannot cite.
+  const named = withRoomNames(
+    [{ deliberationId: 'd1', roomId: 'r1' }, { deliberationId: 'd2', roomId: 'r2' }],
+    [{ id: 'r1', name: 'protocol' }, { id: 'r2', name: 'web-ui' }],
+  );
+  assert.deepEqual(named.map((d: any) => d.room), ['protocol', 'web-ui']);
+
+  // A room the reader cannot see leaves the field unset rather than printing a
+  // UUID — an id on a record reads as part of the record.
+  const orphan = withRoomNames([{ deliberationId: 'd3', roomId: 'gone' }], []);
+  assert.equal(orphan[0]?.room, undefined);
+});
+
+test('an older refresh cannot replace a newer history', () => {
+  // Two deliberations closing together start two independent reads. If the
+  // later one answers first and the earlier answers second, applying blindly
+  // deletes the freshest record until something else closes or the page
+  // reloads. Every response is stamped before its read, so the stamps order
+  // them even when the network does not.
+  assert.equal(isFresher(12, 10), true, 'a newer snapshot lands');
+  assert.equal(isFresher(10, 12), false, 'a straggler is dropped');
+  assert.equal(isFresher(12, 12), true, 'an equal stamp is the same history, so either is fine');
+  assert.equal(isFresher(0, -1), true, 'the first paint always lands');
+  assert.equal(isFresher(undefined as any, 5), false, 'a response with no stamp cannot be ordered, so it is not trusted');
 });

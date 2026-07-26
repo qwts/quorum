@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>decisions · quorum</title>
+    <link rel="stylesheet" href="../styles.css" />
+    <script type="module" src="../index.js"></script>
+    <style>
+      /* Page chrome only. Every value is a token — a literal here is a check
+         failure, not a matter of taste. */
+      body { padding: var(--sp-9) var(--sp-7) var(--sp-10); }
+      main { display: flex; flex-direction: column; gap: var(--sp-7); max-width: var(--measure-record); margin: 0 auto; }
+
+      .head { display: flex; align-items: baseline; gap: var(--sp-4); }
+      .title { font: var(--type-heading); letter-spacing: var(--ls-tight); margin: 0; }
+      .title b { color: var(--brass-500); font-weight: inherit; }
+      .where { font: var(--type-mono); color: var(--text-faint); }
+      .lede { margin: 0; font: var(--type-body); color: var(--text-muted); }
+
+      /* Paper on ink: the record is the permanent past, and the cards say so
+         themselves — this only spaces them. */
+      .records { display: flex; flex-direction: column; gap: var(--sp-6); }
+      .empty { font: var(--type-body); color: var(--text-meta); }
+      .notice { border-left: var(--border-width-accent) dashed var(--line-strong); padding-left: var(--sp-4); font: var(--type-mono); color: var(--text-meta); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="head">
+        <h1 class="title">decisions<b>.</b></h1>
+        <span class="where" id="scope"></span>
+      </div>
+      <p class="lede">
+        Every deliberation that closed, newest first. A record is immutable — open one to see the
+        tally, who dissented, and who never cast.
+      </p>
+      <div id="records"></div>
+    </main>
+
+    <script type="module">
+      import { mountRecords } from './app/records.js';
+
+      // A room in the query string narrows the history; without one this is
+      // every decision the account has made.
+      const room = new URLSearchParams(location.search).get('room') ?? undefined;
+      document.getElementById('scope').textContent = room ? `#${room}` : 'all rooms';
+      document.title = room ? `decisions · #${room}` : 'decisions · quorum';
+
+      mountRecords({ room }).catch((error) => {
+        // Say what failed and what to do. Never a bare error, and never a
+        // spinner waiting on something that already gave up.
+        document.getElementById('records').replaceChildren(
+          Object.assign(document.createElement('div'), {
+            className: 'empty',
+            textContent: `Could not load decisions: ${error.message}. Check the server is running, then reload.`,
+          }),
+        );
+      });
+    </script>
+  </body>
+</html>

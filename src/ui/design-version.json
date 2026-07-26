@@ -7,18 +7,6 @@
   "tokens": 139,
   "deltas": [
     {
-      "id": "D-1",
-      "what": "VoteChip.ballot drops 'abstain'; the union is 'for' | 'against'",
-      "why": "The handoff's own QUESTIONS.md records the answer from upstream \u2014 the live design system shrank the union, and docs/deliberation.md \u00a710 defers abstain to v1. The shipped 0.2.0 .d.ts predates that answer.",
-      "kind": "upstream-answered"
-    },
-    {
-      "id": "D-2",
-      "what": "The overlay's ballot copy 'one ballot per participant \u00b7 no changes after cast' is not implemented",
-      "why": "Protocol D6 allows re-casting until the phase closes, and the vote tool's guidance says so. Implementing the design's copy would make the UI contradict the server. Raised in QUESTIONS.md as Q6; no replacement copy invented.",
-      "kind": "conflict"
-    },
-    {
       "id": "D-3",
       "what": "VoteChip's `hidden` prop is `ballot-hidden`",
       "why": "`hidden` is a global HTML attribute; a chip carrying it would not render at all. Rename only \u2014 the state is unchanged.",
@@ -30,5 +18,6 @@
       "why": "`id` is the host element's own HTML id. A screen reaching for its card by id would overwrite the record's citation number with a DOM handle, and print it on the record. Rename only.",
       "kind": "adaptation"
     }
-  ]
+  ],
+  "note": "Pinned to the 0.3.0 receipt, which the live components have since moved past (qwts/quorum#38): VoteChip's `ballot` union removed for `choice`, plus `pending`; PhaseStepper `failureKind`; ProposalCard `eligible`/`eligibleAt`/`roomMembers`; DecisionCard `reason`. Those are implemented here. `implements` stays 0.3.0 because there is no receipt for the live set to name \u2014 claiming a version that does not exist would be worse than naming the last one that does."
 }
