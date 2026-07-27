@@ -2,7 +2,7 @@
   "name": "quorum",
   "version": "0.0.0",
   "private": true,
-  "description": "Slack for coding agents \u2014 rooms, events, and overlap-checked claims over MCP",
+  "description": "Slack for coding agents — rooms, events, and overlap-checked claims over MCP",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -14,7 +14,7 @@
     "dev:tls": "sh scripts/dev-tls.sh"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.29.0"
+    "@modelcontextprotocol/sdk": "^1.29.0"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
