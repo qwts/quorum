@@ -11,11 +11,12 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
+import { request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join as joinPath } from 'node:path';
 
 import { openQuorum } from '../src/domain/quorum.ts';
-import { startServer } from '../src/mcp/server.ts';
+import { MCP_PATH, startServer } from '../src/mcp/server.ts';
 import { allowedHosts, refuseWrite } from '../src/http/origin.ts';
 import { certificateHost, explainTlsFailure, loadTls, readPassphrase } from '../src/http/tls.ts';
 
@@ -249,6 +250,75 @@ test('a rebound hostname is refused however well its headers agree', () => {
   const dev = { host: 'quorum.local.example.com', origin: 'https://quorum.local.example.com', 'content-type': 'application/json' };
   assert.match(refuseWrite(headers(dev), hosts)!, /does not answer/);
   assert.equal(refuseWrite(headers(dev), configured), null);
+});
+
+test('a rebound hostname is refused on the MCP endpoint too — a tool call is a write (#32)', async () => {
+  // post_message, vote, and claim_scope all arrive as MCP tool calls, over
+  // this same server, on /mcp rather than /api/. The guard above means
+  // nothing if that surface answers a rebound Host regardless. Node's
+  // http.request, connecting by IP with an explicit Host header, reproduces
+  // what a rebinding attacker's browser actually sends — unlike fetch, which
+  // derives Host from the URL and cannot be made to lie about it.
+  const rebound = await new Promise<{ status: number; body: any }>((resolve, reject) => {
+    const req = httpRequest(
+      {
+        host: '127.0.0.1',
+        port: server.port,
+        path: MCP_PATH,
+        method: 'POST',
+        headers: { host: 'evil.example', origin: 'http://evil.example', 'content-type': 'application/json' },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk) => chunks.push(chunk));
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, body: JSON.parse(Buffer.concat(chunks).toString()) }));
+      },
+    );
+    req.on('error', reject);
+    req.end(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }));
+  });
+  assert.equal(rebound.status, 403);
+  assert.match(rebound.body.error, /does not answer to that hostname/);
+});
+
+test('a text/plain tool call cannot skip the preflight on /mcp (#32)', async () => {
+  // refuseOrigin lets a literal `Origin: null` through (sandboxed iframes
+  // send it), and /mcp adds no content-type check of its own — the
+  // transport's insistence on application/json is what forces a cross-origin
+  // attempt into a preflight this server never answers. That insistence
+  // lives in the SDK, not in this repo, so pin it: if an upgrade ever
+  // relaxes it, this is the test that says the quiet assumption broke.
+  //
+  // The Accept header is the valid MCP one on purpose: the transport checks
+  // Accept before Content-Type, so without it the request dies a 406 and the
+  // content-type path this test exists to pin goes unexercised (#69 review).
+  const simple = await new Promise<{ status: number; body: any }>((resolve, reject) => {
+    const req = httpRequest(
+      {
+        host: '127.0.0.1',
+        port: server.port,
+        path: MCP_PATH,
+        method: 'POST',
+        headers: {
+          host: `127.0.0.1:${server.port}`,
+          origin: 'null',
+          accept: 'application/json, text/event-stream',
+          'content-type': 'text/plain',
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk) => chunks.push(chunk));
+        res.on('end', () =>
+          resolve({ status: res.statusCode ?? 0, body: JSON.parse(Buffer.concat(chunks).toString()) }),
+        );
+      },
+    );
+    req.on('error', reject);
+    req.end(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }));
+  });
+  assert.equal(simple.status, 415, 'the refusal is the content-type check, not some earlier gate');
+  assert.match(String(simple.body.error?.message), /Content-Type/i);
 });
 
 test('a malformed path is a bad request, not a server fault', async () => {
