@@ -20,7 +20,11 @@ async function read(path) {
   const response = await fetch(path, { headers: HEADERS });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(body.error ?? `${path} failed with ${response.status}`);
+    // The status rides along so a caller can tell "that does not exist" from
+    // "the request broke" — paintRoom treats the first as an answer.
+    throw Object.assign(new Error(body.error ?? `${path} failed with ${response.status}`), {
+      status: response.status,
+    });
   }
   return body;
 }
@@ -92,12 +96,23 @@ export const api = {
  * @param {string} room
  */
 export async function paintRoom(room) {
+  // A room that does not exist is an answer, not a failure. Nothing seeds
+  // rooms — an agent creates one with create_room — so on a fresh install the
+  // front door's default room is missing and its scoped reads 404. That paints
+  // as an empty room; the feed still opens, so the room appears the moment an
+  // agent makes it exist. A dead server never reaches this: the unscoped reads
+  // fail first, without a status, and stay fatal.
+  const absent = { seq: Infinity, messages: [], deliberations: [] };
+  const orAbsent = (/** @type {any} */ error) => {
+    if (error?.status === 404) return absent;
+    throw error;
+  };
   const [rooms, participants, claims, messages, deliberations] = await Promise.all([
     api.rooms(),
     api.participants(),
     api.claims(),
-    api.messages(room),
-    api.deliberations(room),
+    api.messages(room).catch(orAbsent),
+    api.deliberations(room).catch(orAbsent),
   ]);
   return {
     seq: Math.min(rooms.seq, participants.seq, claims.seq, messages.seq, deliberations.seq),

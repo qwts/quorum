@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { ballotHint, countdown, phaseNote, quorumOf, turnoutNote } from '../src/ui/kit/app/overlay-model.js';
+import { paintRoom } from '../src/ui/kit/app/api.js';
 import { commandsFor } from '../src/ui/kit/app/connect-model.js';
 import { applyDm, emptyDm } from '../src/ui/kit/app/dm-model.js';
 import { apply, emptyState, seed } from '../src/ui/kit/app/store.js';
@@ -109,4 +110,36 @@ test('the connect commands point at this server, not at the mock port', () => {
   assert.equal(commands['claude-code'], 'claude mcp add --transport http quorum http://127.0.0.1:5151/mcp');
   assert.match(String(commands.codex), /codex mcp add quorum --url http:\/\/127\.0\.0\.1:5151\/mcp/);
   assert.match(String(commands.other), /streamable-HTTP endpoint\nhttp:\/\/127\.0\.0\.1:5151\/mcp/);
+});
+
+test('the front door paints a room that does not exist yet as empty, not as a failure (#48)', async (t) => {
+  // Nothing seeds rooms — an agent creates one with create_room — so on a
+  // fresh install the default room's scoped reads 404. That must paint as an
+  // empty room with the sidebar and feed intact, not a dead page telling the
+  // person to check a server that is running fine.
+  const original = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = original;
+  });
+  const answered = new Map<string, unknown>([
+    ['/api/rooms', { seq: 7, rooms: [] }],
+    ['/api/participants', { seq: 7, participants: [] }],
+    ['/api/claims', { seq: 7, claims: [] }],
+  ]);
+  const serving = (missing: { status: number; error: string }) =>
+    (async (path: string) => {
+      const hit = answered.get(path);
+      if (hit) return { ok: true, json: async () => hit };
+      return { ok: false, status: missing.status, json: async () => ({ error: missing.error }) };
+    }) as unknown as typeof fetch;
+
+  globalThis.fetch = serving({ status: 404, error: 'no such room: protocol' });
+  const painted = await paintRoom('protocol');
+  assert.equal(painted.seq, 7, 'the stream opens at the stamp of the reads that answered');
+  assert.deepEqual(painted.messages, []);
+  assert.deepEqual(painted.deliberations, []);
+
+  // Only "not found" is an answer. Anything else is still fatal.
+  globalThis.fetch = serving({ status: 500, error: 'boom' });
+  await assert.rejects(() => paintRoom('protocol'), /boom/);
 });
