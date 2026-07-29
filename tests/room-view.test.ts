@@ -413,6 +413,7 @@ const RECORD = {
     { participantId: 'p2', name: 'Dana', choice: 0, dissent: null },
     { participantId: 'p3', name: 'devin:tests', choice: 1, dissent: 'The field defaults on, which ships the risk the challenge was about.' },
   ],
+  challengeMessageIds: [1857, 1858],
 };
 
 test('a record names who never cast, not just how many did', () => {
@@ -429,6 +430,11 @@ test('a record names who never cast, not just how many did', () => {
   assert.deepEqual(props.options[0]?.voters, ['codex:api', 'Dana']);
 
   assert.deepEqual(props.dissents, [{ name: 'devin:tests', note: RECORD.ballots[2]?.dissent }]);
+
+  // The challenges the record cites, by seq (D4) — the record references
+  // messages, never copies them, and the citation trail must survive the trip
+  // from domain record to card (design 0.4.0 DecisionCard.challengeRefs).
+  assert.deepEqual(props.challengeRefs, [1857, 1858]);
 });
 
 test('an unopened record shows a summary and claims no tally', () => {

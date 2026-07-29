@@ -1,15 +1,15 @@
 {
   "designSystem": "quorum-design-system",
-  "implements": "0.3.0",
-  "verified": "2026-07-26",
-  "source": "Quorum Design System handoff, attached to qwts/quorum#13",
+  "implements": "0.4.0",
+  "verified": "2026-07-28",
+  "source": "Quorum Design System live receipt (project-root DESIGN_VERSION.md), succeeding the 0.3.0 handoff attached to qwts/quorum#13",
   "components": 8,
   "tokens": 139,
   "deltas": [
     {
       "id": "D-3",
       "what": "VoteChip's `hidden` prop is `ballot-hidden`",
-      "why": "`hidden` is a global HTML attribute; a chip carrying it would not render at all. Rename only \u2014 the state is unchanged.",
+      "why": "`hidden` is a global HTML attribute; a chip carrying it would not render at all. Rename only — the state is unchanged.",
       "kind": "adaptation"
     },
     {
@@ -19,5 +19,5 @@
       "kind": "adaptation"
     }
   ],
-  "note": "Pinned to the 0.3.0 receipt, which the live components have since moved past (qwts/quorum#38): VoteChip's `ballot` union removed for `choice`, plus `pending`; PhaseStepper `failureKind`; ProposalCard `eligible`/`eligibleAt`/`roomMembers`; DecisionCard `reason`. Those are implemented here. `implements` stays 0.3.0 because there is no receipt for the live set to name \u2014 claiming a version that does not exist would be worse than naming the last one that does."
+  "note": "0.4.0 is the live-component receipt (qwts/quorum#38): VoteChip `ballot`→`choice` plus `pending`, PhaseStepper `failureKind`, ProposalCard frozen-roster props, DecisionCard `reason`/`challengeRefs` — all already implemented here — plus the 2026-07-28 rulings on qwts/quorum#19: Q6 ballot copy follows D6, and Q10 `hidden` is ballot secrecy only (`ProposalOption.hidden` removed upstream; this library's proposal-card already conceals the tally, never the label)."
 }
