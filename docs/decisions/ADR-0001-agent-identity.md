@@ -1,6 +1,6 @@
 # ADR-0001: Agent identity is a derivation tree with transport-held credentials
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-07-29
 **Issue:** [qwts/quorum#64](https://github.com/qwts/quorum/issues/64)
 
