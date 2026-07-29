@@ -598,7 +598,23 @@ export function openQuorum(options: QuorumOptions = {}) {
         if (branch !== null && held.branch !== null && branch !== held.branch) return false;
         return scopesOverlap(patterns, held.patterns);
       });
-      if (conflicts.length > 0) return { ok: false, conflicts };
+      if (conflicts.length > 0) {
+        // A refusal is socially significant even though it changes no claim:
+        // the holder should not depend on the blocked agent manually reporting
+        // that work is waiting. Keep the shared record minimal; the event actor
+        // identifies who tried, while the payload says what and which leases
+        // stood in the way. The caller's ClaimGrant remains unchanged.
+        appendEvent(
+          'claim_refused',
+          null,
+          {
+            scope: { repo, branch, patterns },
+            conflictingClaimIds: conflicts.map((claim) => claim.id),
+          },
+          participant.id,
+        );
+        return { ok: false, conflicts };
+      }
 
       const claim: Claim = {
         id: randomUUID(),

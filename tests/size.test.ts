@@ -45,8 +45,8 @@ const EXCEPTIONS: Record<string, { limit: number; why: string }> = {
     why: 'The command registry (#52): one entry per command is the design — adding a command touches only this file — so it grows with the vocabulary. Split when a category earns its own file, not before.',
   },
   'src/domain/quorum.ts': {
-    limit: 760,
-    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany. Grew the audience filter (#42), then participant status and the command composition (#52), then the occupants read (#56) — the chat write path must close over the same api it dispatches to.',
+    limit: 780,
+    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany. Grew the audience filter (#42), participant status and command composition (#52), the occupants read (#56), then the shared claim-refusal record (#15) — the chat write path must close over the same api it dispatches to.',
   },
   'src/domain/deliberation.ts': {
     limit: 570,

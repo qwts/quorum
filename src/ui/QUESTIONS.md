@@ -40,13 +40,12 @@ when screen chrome does.
 Wordmark-only until a real mark exists (`quorum` in Plex Sans 600, `-0.03em`,
 brass full stop). **Blocking?** no.
 
-### Q4 — `claim_refused` as a domain event
-Refusals are returned to the refused caller only and the domain emits nothing,
-so `<q-message-row visibility="private">` draws the refusal with no `seq` and
-the footnote *visible only to you · not a room event*. If the domain gains a
-`claim_refused` event, drop the attribute and give the row a `seq`; it becomes
-ordinary shared history. One prop, both futures. **Blocking?** no — the private
-form is implemented as designed.
+### Q4 — `claim_refused` as a domain event — **CLOSED 2026-07-28**
+The human ruling is yes: every refused attempt appends a shared
+`claim_refused` event with the actor, requested scope, and conflicting claim
+ids, while the caller's refusal reply stays unchanged. The staged hinge is now
+flipped: the row has a `seq`, no private visibility attribute, and is ordinary
+shared history.
 
 ### Q5 — `VoteChip.ballot` typed `'for' | 'against' | 'abstain'` — **CLOSED 2026-07-26**
 

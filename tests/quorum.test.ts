@@ -121,6 +121,44 @@ test('claims on different named branches do not collide, but an unbranched claim
   quorum.close();
 });
 
+test('every refused claim attempt leaves a minimal shared event without changing the reply', () => {
+  const quorum = openQuorum();
+  const holder = agent(quorum, 'holder');
+  const blocked = agent(quorum, 'blocked');
+  const granted = quorum.claimScope({
+    participantId: holder.id,
+    repo: 'quorum',
+    patterns: ['src/domain/**'],
+    branch: 'main',
+    purpose: 'the domain',
+  });
+  assert.equal(granted.ok, true);
+  const claimId = granted.ok ? granted.claim.id : '';
+
+  const attempt = () =>
+    quorum.claimScope({
+      participantId: blocked.id,
+      repo: 'quorum',
+      patterns: ['src/**/*.ts'],
+      branch: 'main',
+      purpose: 'a refactor',
+    });
+
+  const first = attempt();
+  assert.deepEqual(first, { ok: false, conflicts: granted.ok ? [granted.claim] : [] });
+  attempt();
+
+  const refused = quorum.readEvents().filter((event) => event.kind === 'claim_refused');
+  assert.equal(refused.length, 2, 'each refused attempt is visible once');
+  assert.equal(refused[0]?.actorId, blocked.id, 'the event actor is the refused participant');
+  assert.equal(refused[0]?.roomId, null, 'claims live on the shared feed, not in one room');
+  assert.deepEqual(refused[0]?.payload, {
+    scope: { repo: 'quorum', branch: 'main', patterns: ['src/**/*.ts'] },
+    conflictingClaimIds: [claimId],
+  });
+  quorum.close();
+});
+
 test('a lease expires on its own, frees the scope, and says so on the feed', () => {
   const clock = withClock();
   const quorum = openQuorum({ now: clock.now });
@@ -445,4 +483,3 @@ test('acting without identifying is refused by name', () => {
   );
   quorum.close();
 });
-
