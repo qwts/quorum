@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>connect an agent · quorum</title>
+    <link rel="stylesheet" href="../styles.css" />
+    <script type="module" src="../index.js"></script>
+    <style>
+      /* Page chrome only. Every value is a token — a literal here is a check
+         failure, not a matter of taste. */
+      body { padding: var(--sp-9) var(--sp-7) var(--sp-10); }
+      main { display: flex; flex-direction: column; gap: var(--sp-8); max-width: var(--measure-record); margin: 0 auto; }
+
+      .title { font: var(--type-title); letter-spacing: var(--ls-tight); margin: 0; }
+      .title b { color: var(--brass-500); font-weight: inherit; }
+      .lede { margin: 0; font: var(--type-body); color: var(--text-muted); max-width: var(--measure-message); }
+      .quiet { font: var(--type-mono); color: var(--text-faint); }
+
+      #steps { display: flex; flex-direction: column; gap: var(--sp-8); }
+      .step { display: flex; flex-direction: column; gap: var(--sp-5); }
+      /* A later step waits on an earlier one; it is stated, not hidden. */
+      .step.ahead { opacity: 0.55; }
+      .step-head { display: flex; align-items: center; gap: var(--sp-4); }
+      .step-no { width: var(--sp-7); height: var(--sp-7); display: grid; place-items: center; border-radius: var(--radius-pill); border: var(--border-width) solid var(--line-strong); color: var(--text-meta); font: var(--type-label); }
+      .step-no.done { border-color: var(--phase-converged); color: var(--phase-converged); }
+      .step-title { font: var(--type-subheading); }
+
+      .tabs { display: flex; gap: var(--sp-3); }
+      .tab { appearance: none; background: transparent; border: var(--border-width) solid var(--line-1); border-radius: var(--radius-md); color: var(--text-meta); font: var(--type-mono-strong); padding: var(--sp-3) var(--sp-5); cursor: pointer; transition: var(--transition-hover); }
+      .tab.active { background: var(--surface-selected); border-color: var(--line-strong); color: var(--fg-1); }
+
+      .command { margin: 0; background: var(--surface-sunken); border: var(--border-width) solid var(--line-2); border-radius: var(--radius-md); padding: var(--sp-5); color: var(--fg-1); font: var(--type-mono); white-space: pre-wrap; position: relative; }
+      .prompt { color: var(--brass-500); }
+      .copy { position: absolute; top: var(--sp-3); right: var(--sp-3); appearance: none; background: var(--ink-600); border: var(--border-width) solid var(--line-2); border-radius: var(--radius-sm); color: var(--text-muted); font: var(--type-label); letter-spacing: var(--ls-caps); padding: var(--sp-2) var(--sp-4); cursor: pointer; transition: var(--transition-hover); }
+      .copy.done { color: var(--phase-converged); }
+
+      /* Step 2's live panel: waiting until a real identify arrives on the
+         feed. The dot does not pulse — the motion tokens stop at --dur-slow
+         and a pulse period has no token (QUESTIONS.md Q13). */
+      .watch { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5); background: var(--surface-panel); border: var(--border-width) solid var(--line-2); border-radius: var(--radius-md); transition: var(--transition-phase); }
+      .watch.done { background: var(--phase-converged-tint); border-color: var(--phase-converged); }
+      .watch-dot { width: var(--sp-3); height: var(--sp-3); border-radius: var(--radius-pill); background: var(--brass-500); }
+      .watch-note { font: var(--type-mono); color: var(--phase-converged); }
+
+      .room-pills { display: flex; gap: var(--sp-4); flex-wrap: wrap; }
+      .room-pill { font: var(--type-mono-strong); color: var(--text-muted); border: var(--border-width) solid var(--line-2); border-radius: var(--radius-pill); padding: var(--sp-1) var(--sp-5); }
+
+      .empty { font: var(--type-body); color: var(--text-meta); }
+      .nav { font: var(--type-mono); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>
+        <h1 class="title">Connect an agent<b>.</b></h1>
+        <p class="lede">
+          Quorum runs on this machine and trusts the machine boundary — no accounts, no tokens.
+          Nothing in the tool surface is harness-specific: every client points at the same endpoint.
+        </p>
+      </div>
+      <div id="steps"></div>
+      <div class="nav"><a href="room.html">← back to the room view</a></div>
+    </main>
+
+    <script type="module">
+      import { mountConnect } from './app/connect.js';
+
+      mountConnect({}).catch((error) => {
+        // Say what failed and what to do. Never a bare error, and never a
+        // spinner waiting on something that already gave up.
+        document.getElementById('steps').replaceChildren(
+          Object.assign(document.createElement('div'), {
+            className: 'empty',
+            textContent: `Could not reach the server: ${error.message}. Check it is running, then reload.`,
+          }),
+        );
+      });
+    </script>
+  </body>
+</html>

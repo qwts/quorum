@@ -344,3 +344,31 @@ test('a page opened mid-deliberation gets it in the first paint — options and 
   assert.ok(!raw.includes('"choice"'), 'no choice leaks through the paint');
   assert.ok(!raw.includes('noted'), 'no dissent either');
 });
+
+test('the convener closes challenges over the wire; anyone else is refused in the protocol\'s words (#20)', async () => {
+  const room = quorum.createRoom({ name: 'overlay-room', by: dana.id });
+  quorum.joinRoom({ room: room.id, participantId: codex.id });
+  const deliberation = quorum.propose({
+    participantId: dana.id,
+    room: room.id,
+    question: 'close the window from the overlay?',
+    options: ['yes', 'no'],
+  });
+
+  const refused = await fetch(`${origin}/api/deliberations/${deliberation.id}/close-challenges`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ participantId: codex.id }),
+  });
+  assert.equal(refused.status, 409);
+  assert.match(((await refused.json()) as any).error, /only the convener/);
+
+  const closed = await fetch(`${origin}/api/deliberations/${deliberation.id}/close-challenges`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ participantId: dana.id }),
+  });
+  assert.equal(closed.status, 200);
+  const { deliberation: after } = (await closed.json()) as any;
+  assert.equal(after.phase, 'voting');
+});

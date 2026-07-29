@@ -341,7 +341,10 @@ test('a deliberation is folded from its events, and its ballots stay secret', ()
   assert.deepEqual(live?.options, ['Add it now', 'Defer to v1']);
   // How many have voted is public, because turnout is what closes the phase.
   assert.equal(live?.cast, 1);
-  assert.equal(live?.eligible, 2);
+  // The frozen roster survives the fold as ids — the ballot_cast event's
+  // eligible count never downgrades it, or the overlay's quorum and
+  // ballots-in list would lose their denominators (#20).
+  assert.deepEqual(live?.eligible, ['p1', 'p2']);
 
   // What must not exist is a mapping from a voter to a choice. The event does
   // not carry one, so the model cannot hold one however it folds — the
@@ -372,8 +375,7 @@ test('a closed deliberation stops being the room\'s current business', () => {
 
 test('a paint carries the room\'s open deliberation, and the feed takes over from it (#35)', () => {
   // The bug this guards: a page loaded mid-deliberation folded from events
-  // alone, so the live proposal was invisible until the next event on it —
-  // and the phase could close without the late arrival ever seeing a ballot.
+  // alone, so the live proposal was invisible until the next event on it.
   const state = seed(painted(), {
     seq: 12,
     deliberations: [{ ...DELIBERATION, phase: 'voting', rule: 'majority', cast: ['p2'] }],
@@ -385,8 +387,7 @@ test('a paint carries the room\'s open deliberation, and the feed takes over fro
   assert.deepEqual(live.options, DELIBERATION.options, 'the ballot is castable from the paint alone');
   assert.equal(live.cast, 1, 'the model keeps turnout as a count, matching what ballot_cast will say');
 
-  // The fold continues from the seeded entry — the paint seeds, the feed owns
-  // every change after.
+  // The paint seeds, the feed owns every change after.
   const voted = apply(state, event(13, 'ballot_cast', { deliberationId: 'd1', by: 'codex:api', cast: 2, eligible: 2 }, 'r1'));
   assert.equal(voted.deliberations.get('d1').cast, 2);
   const closed = apply(voted, event(14, 'deliberation_converged', { deliberationId: 'd1', chosen: 0 }, 'r1'));

@@ -13,7 +13,6 @@
 import { h, meta } from '../../lib/element.js';
 import { clock, count, remaining, scopeOf } from './format.js';
 import { liveClaims, messagesIn, participant } from './store.js';
-import { optionChipProps } from '../../lib/phase.js';
 
 /**
  * The room stream. Consecutive messages from one participant collapse into a
@@ -181,43 +180,4 @@ export function topBarView(state, room, status) {
       h('span', { class: `feed feed-${status}` }, status === 'live' ? 'live' : 'reconnecting'),
     ),
   );
-}
-
-/**
- * The room's open deliberation, as the head of the stream.
- *
- * Options come through `optionChipProps`, which is the rule that keeps a
- * ballot readable: `hidden` conceals the *tally*, never the label. You cannot
- * vote for a choice you cannot read, and two options both reading "hidden" are
- * a coin toss rather than a ballot.
- *
- * @param {import('./store.js').State} state
- * @param {any} deliberation
- */
-export function proposalView(state, deliberation) {
-  if (!deliberation) return null;
-
-  const convener = participant(state, deliberation.convenerId);
-  const options = (deliberation.options ?? []).map((/** @type {string} */ option) =>
-    optionChipProps({ option, hidden: deliberation.phase === 'voting' }, deliberation.phase),
-  );
-
-  const card = /** @type {any} */ (h('q-proposal-card', {
-    // Which deliberation this card is, so a ballot from it reaches the right
-    // one when a room is running more than one.
-    'data-deliberation': deliberation.id,
-    question: deliberation.question,
-    phase: deliberation.phase,
-    convener: convener?.name ?? deliberation.by,
-    'convener-harness': convener?.harness,
-    'convener-kind': convener?.harness === 'human' ? 'human' : 'agent',
-    'phase-ends-at': deliberation.phaseEndsAt ? clock(deliberation.phaseEndsAt) : null,
-    'votes-cast': deliberation.cast,
-    'total-voters': deliberation.eligible?.length ?? deliberation.eligible,
-    // Selectable only while there is a ballot to cast. Offering a chip in any
-    // other phase is offering an action the server will refuse.
-    selectable: deliberation.phase === 'voting' || null,
-  }));
-  card.options = options;
-  return card;
 }

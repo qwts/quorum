@@ -17,12 +17,15 @@
  *
  * @param {object} options
  * @param {number} options.after      feed position from the first-paint read
+ * @param {string} [options.as]       participant id whose audience-scoped events
+ *                                    (DMs) the stream should include (#42);
+ *                                    omitted, this is the shared feed alone
  * @param {(event: any) => void} options.onEvent
  * @param {(state: 'live'|'reconnecting') => void} [options.onStatus]
  * @returns {{close: () => void}}
  */
-export function openFeed({ after, onEvent, onStatus }) {
-  const source = new EventSource(`/api/events?after=${after}`);
+export function openFeed({ after, as, onEvent, onStatus }) {
+  const source = new EventSource(`/api/events?after=${after}${as ? `&as=${encodeURIComponent(as)}` : ''}`);
 
   const deliver = (/** @type {MessageEvent} */ message) => {
     try {

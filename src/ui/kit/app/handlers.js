@@ -80,6 +80,7 @@ export const HANDLERS = {
       ...payload.deliberation,
       by: payload.by,
       cast: 0,
+      castBy: [],
     }),
 
   voting_opened: (state, { payload }) =>
@@ -87,8 +88,26 @@ export const HANDLERS = {
 
   // Carries who voted and how many have, never *what* they chose. The feed
   // cannot leak a ballot because the ballot is not in it (deliberation.md §6).
-  ballot_cast: (state, { payload }) =>
-    amend(state, payload.deliberationId, { cast: payload.cast, eligible: payload.eligible }),
+  // `castBy` collects the voters' ids (the actor is public, D6) so the
+  // overlay's ballots-in list can mark who has spoken — a re-cast is the same
+  // id again and changes nothing.
+  ballot_cast: (state, event) => {
+    const existing = state.deliberations.get(event.payload.deliberationId);
+    if (!existing) return state;
+    const castBy =
+      event.actorId && !(existing.castBy ?? []).includes(event.actorId)
+        ? [...(existing.castBy ?? []), event.actorId]
+        : (existing.castBy ?? []);
+    return amend(state, event.payload.deliberationId, {
+      cast: event.payload.cast,
+      // The event carries eligible as a count. The fold usually already holds
+      // the frozen roster as ids — from the paint or deliberation_opened —
+      // and the roster is the stronger fact: never downgrade it to a number,
+      // or the overlay's quorum and ballots-in list lose their denominators.
+      eligible: Array.isArray(existing.eligible) ? existing.eligible : event.payload.eligible,
+      castBy,
+    });
+  },
 
   deliberation_converged: (state, { payload }) =>
     amend(state, payload.deliberationId, { phase: 'converged', chosen: payload.chosen }),

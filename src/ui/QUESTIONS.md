@@ -211,3 +211,46 @@ the design side:
 
 Until then the composer's hint says what pressing send will do: `you will be
 asked for a name once`.
+
+### Q13 — The overlay's dimensions and the mock's pulse period have no tokens
+
+- **Where:** `src/ui/kit/room.html` (the deliberation overlay, #20),
+  `src/ui/kit/connect.html` (step 2's waiting dot).
+- **What I needed:** three values the `DeliberationOverlay` and `ConnectAgent`
+  mocks carry as literals: the overlay panel's size (`min(1060px,100%)` ×
+  `min(760px,100%)`), its ballot column's width (`flex: 0 1 320px; min-width:
+  244px`), and the waiting-dot pulse (`q-pulse 1.6s`/`1.8s`).
+- **Why the system does not answer it:** the spacing scale tops out at
+  `--sp-10` (64px) and the rail tokens describe the room's fixed chrome, not a
+  floating panel; the motion tokens stop at `--dur-slow` (220ms) and their own
+  prose says "nothing over 220ms", which the mock's 1.6s pulse contradicts.
+- **What I did instead:** the overlay is sized by inset (`--sp-8` padding on
+  the scrim) so it tracks the viewport with no literal; the ballot column is
+  `calc(var(--rail-roster) + var(--sp-9))` (280px, inside the mock's 244–320
+  range); the dots do not pulse, which is also what the room view already
+  decided for its feed label ("No pulse. Motion announces arrival and phase
+  change, nothing else").
+- **Blocking?** no — but if the floating-panel dimensions are meant to be
+  designed values, they need tokens; and the pulse needs either a duration
+  token above 220ms or the mocks need their animation removed.
+
+### Q14 — Convening a deliberation has no designed input flow
+
+- **Where:** the room screen; requirements 1.1 #9 says a human can *convene*
+  through the web UI, and `POST /api/rooms/:room/deliberations` is live.
+- **What I needed:** a designed way to collect a question and two-to-ten
+  options from a human. The composer is a message field with optional
+  `actions`; the mocks show a `propose` action label but no screen that
+  gathers a proposal's fields, and the library ships no dialog or form
+  primitive (deliberately — see Q12).
+- **Why the system does not answer it:** a proposal is multi-field input, and
+  every existing input in the system is single-field. Q12's ruling (the
+  browser's own `prompt()` is acceptable platform chrome for the *name*)
+  could stretch to three chained prompts, but a three-prompt convening flow
+  is a UX decision nobody designed, and copy is normative here.
+- **What I did instead:** did not wire it. Agents convene over MCP (the
+  route and the tool are the same domain call); humans challenge, vote, and
+  read the record through the overlay. Release notes state 1.1 #9 as
+  partial on exactly this line.
+- **Blocking?** no for alpha; **yes for the acceptance walk (#21)**, which
+  traces 1.1 #9 in full.

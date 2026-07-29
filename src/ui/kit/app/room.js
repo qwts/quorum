@@ -16,7 +16,10 @@ import { ensureIdentified, forget, isStaleIdentity, remembered } from './me.js';
 import { apply, applyAll, emptyState, liveDeliberations, roomByName, seed } from './store.js';
 import { composerProps } from './composer.js';
 import { createSender } from './posting.js';
-import { proposalView, rosterView, sidebarView, streamView, topBarView } from './views.js';
+import { attachStreamVoting } from './casting.js';
+import { createOverlayController } from './room-overlay.js';
+import { bannerView, proposalView } from './deliberation-views.js';
+import { rosterView, sidebarView, streamView, topBarView } from './views.js';
 
 /**
  * How often the roster re-renders on the clock alone.
@@ -43,6 +46,7 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
     stream: doc.getElementById('stream'),
     roster: doc.getElementById('roster'),
     composer: doc.getElementById('composer'),
+    overlay: doc.getElementById('overlay'),
   };
 
   // Built once and never replaced: it holds the draft. Every other region is
@@ -67,49 +71,17 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
   });
   composer.addEventListener('send', (/** @type {any} */ event) => void send(event.detail.value));
 
-  // A chip knows the option it carries, and the domain votes by index — so the
-  // deliberation on screen is what maps one to the other. Delegated from the
-  // region rather than bound to the card, because the card is rebuilt on every
-  // render and a listener on it would go with it.
-  regions.stream?.addEventListener('select', (/** @type {any} */ event) => {
-    // The card the chip belongs to, not "the" deliberation: a room may be
-    // running several, and picking the first would cast a ballot in one
-    // proposal from a chip belonging to another.
-    const card = event.target?.closest?.('q-proposal-card');
-    const id = card?.dataset?.deliberation;
-    const live = liveDeliberations(state, roomByName(state, openRoom)?.id).find((d) => d.id === id);
-    if (!live) return;
-    const choice = (live.options ?? []).indexOf(event.detail.option);
-    if (choice >= 0) void cast(live.id, choice);
+  // A chip knows the option it carries, and the domain votes by index — the
+  // wiring that maps one to the other lives in casting.js.
+  attachStreamVoting({
+    region: regions.stream,
+    getState: () => state,
+    getRoomName: () => openRoom,
+    identify: () => ensureIdentified({ ask: (message) => win.prompt(message), identify: api.identify }),
+    setMe: (who) => { me = who; },
+    setNotice: (message) => { notice = message; },
+    settled: () => render(),
   });
-
-  /**
-   * Cast a ballot.
-   *
-   * Nothing is painted optimistically here either, and it matters more than it
-   * does for a message: during voting the tally is concealed (deliberation.md
-   * §6), so an optimistic chip would be the only thing on screen claiming to
-   * know something the protocol is deliberately withholding.
-   *
-   * @param {string} deliberationId
-   * @param {number} choice
-   */
-  async function cast(deliberationId, choice) {
-    notice = null;
-    try {
-      me = await ensureIdentified({ ask: (message) => win.prompt(message), identify: api.identify });
-      if (!me) {
-        notice = 'Voting needs a name — a ballot with nobody behind it is not a ballot.';
-      } else {
-        await api.vote(deliberationId, me.id, choice);
-      }
-    } catch (error) {
-      // Re-casting, a closed phase, not being in the frozen roster — the
-      // domain says which, in words worth showing as they stand.
-      notice = error instanceof Error ? error.message : String(error);
-    }
-    render();
-  }
   regions.composer?.replaceChildren(composer);
 
   let state = emptyState();
@@ -122,23 +94,43 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
   /** Non-null while a paint is in flight. See `receive`. @type {any[]|null} */
   let buffered = null;
 
+  // The deliberation overlay — opened from the banner, addressed in the URL,
+  // closed with Escape or its own button. Everything it owns lives in
+  // room-overlay.js; this root only hands it the model and the clock.
+  const overlay = createOverlayController({
+    doc,
+    win,
+    now,
+    region: regions.overlay,
+    getState: () => state,
+    getMe: () => me,
+    setMe: (who) => { me = who; },
+    getRoomName: () => openRoom,
+  });
+
   const render = () => {
     const current = roomByName(state, openRoom);
     regions.sidebar?.replaceChildren(sidebarView(state, openRoom, pick));
     regions.topbar?.replaceChildren(topBarView(state, current, status));
     // The open deliberation heads the stream: it is the room's current
     // business, and scrolling to find what you are voting on is not a thing
-    // anyone should have to do.
+    // anyone should have to do. The banner above it carries the one navigation
+    // the state allows — into the overlay (§1.3's "room during deliberation").
     const live = liveDeliberations(state, current?.id);
-    regions.stream?.replaceChildren(
-      ...live.map((deliberation) => proposalView(state, deliberation)).filter(Boolean),
-      streamView(state, current),
+    const stream = /** @type {Node[]} */ (
+      [
+        live.length ? bannerView(live[0], () => overlay.open(live[0].id)) : null,
+        ...live.map((deliberation) => proposalView(state, deliberation)),
+        streamView(state, current),
+      ].filter(Boolean)
     );
+    regions.stream?.replaceChildren(...stream);
     // Assigned onto the live element rather than rebuilding it: the composer
     // holds a draft, a caret and focus, and is the one region that must
     // survive a repaint.
     Object.assign(composer, composerProps(current, me, notice));
     renderRoster();
+    overlay.render();
   };
 
   // Split out because the clock re-renders only this region — repainting the
@@ -185,20 +177,10 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
     }
   }
 
-  /**
-   * Post what was typed.
-   *
-   * Nothing is painted optimistically. The message returns on the feed like
-   * anyone else's, so what this browser shows and what an agent reads are the
-   * same thing arriving by the same route — an optimistic row would be the one
-   * place the two could disagree, and it would disagree exactly when the write
-   * failed.
-   *
-   * @param {string} body
-   */
   /** Switching rooms repaints from the model — the feed is room-agnostic and keeps running. */
   const pick = (/** @type {string} */ name) => {
     if (name === openRoom) return;
+    overlay.adopt(null); // the overlay belongs to the room you just left
     show(name);
     // A link to a room is a link. Without this the address bar keeps naming
     // the room you started in, so reloading or copying the URL opens the wrong
@@ -221,8 +203,13 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
   // room". Without it, back appears to do nothing — the URL changes and the
   // screen does not, which reads as the button being broken.
   win.addEventListener?.('popstate', () => {
-    const name = new URLSearchParams(win.location.search).get('room') ?? room;
+    const params = new URLSearchParams(win.location.search);
+    const name = params.get('room') ?? room;
+    // The overlay is part of the address too: back from an open overlay
+    // closes it, forward reopens it.
+    overlay.adopt(params.get('deliberation'));
     if (name !== openRoom) show(name);
+    else overlay.render();
   });
 
   // Make the opening entry name its room, so history is uniform from the start
@@ -244,7 +231,10 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
     },
   });
 
-  const ticking = setInterval(renderRoster, CLOCK_MS);
+  const ticking = setInterval(() => {
+    renderRoster();
+    overlay.tick(); // the countdown is a clock fact too
+  }, CLOCK_MS);
 
   return {
     close: () => {

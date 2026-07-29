@@ -60,10 +60,24 @@ export const api = {
   identify: (/** @type {string} */ name) => write('/api/identify', { name }),
   join: (/** @type {string} */ room, /** @type {string} */ participantId) =>
     write(`/api/rooms/${encodeURIComponent(room)}/join`, { participantId }),
-  post: (/** @type {string} */ room, /** @type {string} */ participantId, /** @type {string} */ body) =>
-    write(`/api/rooms/${encodeURIComponent(room)}/messages`, { participantId, body }),
+  /**
+   * @param {string} room @param {string} participantId @param {string} body
+   * @param {string} [deliberationId] set when the message is a challenge (D4)
+   */
+  post: (room, participantId, body, deliberationId) =>
+    write(`/api/rooms/${encodeURIComponent(room)}/messages`, { participantId, body, deliberationId }),
   vote: (/** @type {string} */ deliberationId, /** @type {string} */ participantId, /** @type {number} */ choice) =>
     write(`/api/deliberations/${encodeURIComponent(deliberationId)}/vote`, { participantId, choice }),
+  closeChallenges: (/** @type {string} */ deliberationId, /** @type {string} */ participantId) =>
+    write(`/api/deliberations/${encodeURIComponent(deliberationId)}/close-challenges`, { participantId }),
+
+  // DM surfaces (#42). `as` is this browser's participant id — self-asserted,
+  // like every other v0 write names its participant.
+  dmThreads: (/** @type {string} */ as) => read(`/api/dms?as=${encodeURIComponent(as)}`),
+  dms: (/** @type {string} */ as, /** @type {string} */ counterpart) =>
+    read(`/api/dms?as=${encodeURIComponent(as)}&with=${encodeURIComponent(counterpart)}`),
+  sendDm: (/** @type {string} */ participantId, /** @type {string} */ to, /** @type {string} */ body) =>
+    write('/api/dms', { participantId, to, body }),
 };
 
 /**

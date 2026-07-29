@@ -90,6 +90,9 @@ export function seed(state, painted) {
       next.deliberations.set(view.id, {
         ...view,
         cast: Array.isArray(view.cast) ? view.cast.length : view.cast,
+        // Who has cast is D6-public and the paint carries it as ids; the fold
+        // keeps them so the overlay can mark each frozen-roster member.
+        castBy: Array.isArray(view.cast) ? view.cast : (view.castBy ?? []),
       });
     }
   }
