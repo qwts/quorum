@@ -24,8 +24,12 @@ export function recordProps(summary, record) {
     options: /** @type {any[]} */ ([]),
     silent: /** @type {string[]} */ ([]),
     dissents: /** @type {any[]} */ ([]),
+    // The challenges the record cites, by message seq (D4). The record
+    // references messages, never copies them — the citation is the relation.
+    challengeRefs: /** @type {(string|number)[]} */ ([]),
   };
   if (!record) return props;
+  props.challengeRefs = record.challengeMessageIds ?? [];
 
   // Every option is named even at zero: "the ones nobody chose" is part of
   // what was decided, and a tally that lists only winners is an advert.
