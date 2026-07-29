@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { SCHEMA } from './schema.ts';
 import { normalizePatterns, PatternError, scopesOverlap } from './glob.ts';
 import { openDeliberations } from './deliberation.ts';
+import { openDms } from './dm.ts';
 import { QuorumError } from './errors.ts';
 
 export { QuorumError };
@@ -111,6 +112,7 @@ export function openQuorum(options: QuorumOptions = {}) {
   addColumn('events', 'actor_id', 'TEXT');
   addColumn('participants', 'cursor', 'INTEGER NOT NULL DEFAULT 0');
   addColumn('messages', 'deliberation_id', 'TEXT');
+  addColumn('events', 'audience', 'TEXT');
 
   // Everyone blocked in wait_for_events. Appending an event wakes them all;
   // each re-reads from its own cursor, so there is no per-waiter bookkeeping.
@@ -129,19 +131,22 @@ export function openQuorum(options: QuorumOptions = {}) {
     };
   }
 
+  // `audience` is null for the shared feed. Naming participants makes the
+  // event reach exactly them and nobody else — not as a rendering choice but
+  // at every read below, so a third party cannot learn the event existed.
+  // Everyone blocked in waitForEvents still wakes (waking is cheap and keeps
+  // the bookkeeping at zero); the audience filter in the re-read is what
+  // decides who actually receives it.
   function appendEvent(
     kind: string,
     roomId: string | null,
     payload: Record<string, unknown>,
     actorId: string | null,
+    audience: string[] | null = null,
   ): void {
-    db.prepare('INSERT INTO events (kind, room_id, actor_id, payload, created_at) VALUES (?, ?, ?, ?, ?)').run(
-      kind,
-      roomId,
-      actorId,
-      JSON.stringify(payload),
-      now(),
-    );
+    db.prepare(
+      'INSERT INTO events (kind, room_id, actor_id, payload, created_at, audience) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(kind, roomId, actorId, JSON.stringify(payload), now(), audience === null ? null : JSON.stringify(audience));
     for (const wake of waiters) wake();
   }
 
@@ -218,8 +223,21 @@ export function openQuorum(options: QuorumOptions = {}) {
     return Math.min(claim, phase);
   }
 
-  function readEventsAfter(afterSeq: number, limit: number): QuorumEvent[] {
-    const rows = db.prepare('SELECT * FROM events WHERE seq > ? ORDER BY seq LIMIT ?').all(afterSeq, limit) as {
+  // Every read of the feed goes through here, and `viewer` is the audience
+  // filter: a null-audience event reaches everyone; an audience-scoped one
+  // reaches only the participants it names. A null viewer — an unidentified
+  // observer — gets the shared feed alone. Filtering in SQL keeps the limit
+  // honest: a page of events for *you*, not a page of rows minus the ones
+  // you were never allowed to see.
+  function readEventsAfter(afterSeq: number, limit: number, viewer: string | null): QuorumEvent[] {
+    const rows = db
+      .prepare(
+        `SELECT * FROM events
+         WHERE seq > ?
+           AND (audience IS NULL OR EXISTS (SELECT 1 FROM json_each(events.audience) WHERE json_each.value = ?))
+         ORDER BY seq LIMIT ?`,
+      )
+      .all(afterSeq, viewer, limit) as {
       seq: number;
       kind: string;
       room_id: string | null;
@@ -249,8 +267,17 @@ export function openQuorum(options: QuorumOptions = {}) {
     return row?.cursor ?? 0;
   }
 
-  function unseenCount(cursor: number): number {
-    const row = db.prepare('SELECT COUNT(*) AS n FROM events WHERE seq > ?').get(cursor) as { n: number };
+  // Counted through the same audience filter as the reads, or the count would
+  // promise events the read then refuses to deliver — an agent told "3
+  // waiting" must find exactly 3.
+  function unseenCount(cursor: number, viewer: string | null): number {
+    const row = db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM events
+         WHERE seq > ?
+           AND (audience IS NULL OR EXISTS (SELECT 1 FROM json_each(events.audience) WHERE json_each.value = ?))`,
+      )
+      .get(cursor, viewer) as { n: number };
     return row.n;
   }
 
@@ -281,6 +308,10 @@ export function openQuorum(options: QuorumOptions = {}) {
   // The deliberation protocol composes over the same db and feed; the Deps
   // object is the entire seam (docs/deliberation.md §8).
   const deliberations = openDeliberations({ db, now, appendEvent, requireParticipant, requireRoom, isMember });
+
+  // Direct messages compose the same way; their events are audience-scoped
+  // through the appendEvent they are handed (docs/deliberation.md §8 seams).
+  const dms = openDms({ db, now, appendEvent, requireParticipant });
 
   return {
     close(): void {
@@ -323,7 +354,7 @@ export function openQuorum(options: QuorumOptions = {}) {
         // The cursor is read *before* this identify's own event is appended,
         // so an agent is never told it missed its own reconnection.
         const cursor = storedCursor(participant.id);
-        const unseen = unseenCount(cursor);
+        const unseen = unseenCount(cursor, participant.id);
         appendEvent('participant_identified', null, { participant, resumed: true }, participant.id);
         return { participant, resumed: true, claims: held, cursor, unseen };
       }
@@ -489,6 +520,15 @@ export function openQuorum(options: QuorumOptions = {}) {
       }));
     },
 
+    // Direct messages (requirements 1.1 #7), composed from src/domain/dm.ts.
+    // The dm_message event is audience-scoped to its pair: the counterpart's
+    // wait_for_events wakes (1.1 #8) while every other reader — participant,
+    // observer, or the shared SSE stream — sees neither the message nor that
+    // one was sent. The filter lives in readEventsAfter above.
+    sendDm: dms.sendDm,
+    readDms: dms.readDms,
+    listDmThreads: dms.listDmThreads,
+
     // The Overlap-checked lease. A grant is refused when a live lease held by
     // someone else covers any of the same paths — and the refusal carries the
     // holder, so the caller can go talk to them instead of guessing.
@@ -586,8 +626,10 @@ export function openQuorum(options: QuorumOptions = {}) {
       return liveClaims(input.repo?.trim() || undefined);
     },
 
-    readEvents(input: { afterSeq?: number; limit?: number } = {}): QuorumEvent[] {
-      return readEventsAfter(input.afterSeq ?? 0, Math.min(Math.max(input.limit ?? 100, 1), 500));
+    // `viewerId` widens the read to the audience-scoped events addressed to
+    // that participant; without it this is the shared feed alone.
+    readEvents(input: { afterSeq?: number; limit?: number; viewerId?: string | null } = {}): QuorumEvent[] {
+      return readEventsAfter(input.afterSeq ?? 0, Math.min(Math.max(input.limit ?? 100, 1), 500), input.viewerId ?? null);
     },
 
     latestSeq(): number {
@@ -598,7 +640,7 @@ export function openQuorum(options: QuorumOptions = {}) {
     cursorFor(participantId: string): { cursor: number; unseen: number } {
       requireParticipant(participantId); // unknown ids are caller bugs, not empty results
       const cursor = storedCursor(participantId);
-      return { cursor, unseen: unseenCount(cursor) };
+      return { cursor, unseen: unseenCount(cursor, participantId) };
     },
 
     // The deliberation protocol (docs/deliberation.md, requirements 1.1
@@ -615,20 +657,28 @@ export function openQuorum(options: QuorumOptions = {}) {
     // deadline is the earlier of the caller's timeout and the next lease
     // expiry, so an agent waiting for a scope to free up is woken by the
     // expiry itself without any background timer existing.
+    // `participantId` is who is consuming — it acknowledges the cursor and is
+    // the audience viewer. `viewerId` is for a reader that watches *as* a
+    // participant without consuming for them (the SSE stream: watching a page
+    // must not advance the durable cursor, but the DM screen still has to see
+    // the DMs addressed to its person). When both are given, participantId
+    // wins; it is the stronger claim.
     async waitForEvents(input: {
       afterSeq: number;
       timeoutMs?: number;
       participantId?: string | null;
+      viewerId?: string | null;
     }): Promise<QuorumEvent[]> {
       const timeoutMs = Math.min(Math.max(input.timeoutMs ?? 25_000, 0), 120_000);
       const deadline = Date.now() + timeoutMs;
+      const viewer = input.participantId ?? input.viewerId ?? null;
       // Coming back for events after N is the acknowledgement that everything
       // through N arrived.
       acknowledgeCursor(input.participantId ?? null, input.afterSeq);
 
       for (;;) {
         sweepExpired();
-        const events = readEventsAfter(input.afterSeq, 100);
+        const events = readEventsAfter(input.afterSeq, 100, viewer);
         if (events.length > 0) return events; // recorded when the caller comes back for more
 
         const remaining = deadline - Date.now();

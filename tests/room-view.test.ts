@@ -503,13 +503,10 @@ test('an older refresh cannot replace a newer history', () => {
 });
 
 test('a repaint retires a live deliberation the paint no longer lists (#35)', () => {
-  // The close happened while this page could not hear it — feed down, or a
-  // room switched away from. The closing event sits *behind* the repaint's
-  // seq, so replay is rejected as already-folded; the paint's silence is the
-  // only messenger, and it must be believed or the ballot is offered forever.
-  const opened = apply(painted(), event(11, 'deliberation_opened', {
-    deliberationId: 'd1', deliberation: DELIBERATION, by: 'codex:api',
-  }, 'r1'));
+  // The close happened while this page could not hear it, and the closing
+  // event sits *behind* the repaint's seq — replay is rejected as already-
+  // folded. The paint's silence is the only messenger; believe it.
+  const opened = apply(painted(), event(11, 'deliberation_opened', { deliberationId: 'd1', deliberation: DELIBERATION, by: 'codex:api' }, 'r1'));
   assert.equal(liveDeliberations(opened, 'r1').length, 1);
 
   const repainted = seed(opened, { seq: 20, room: 'protocol', deliberations: [] });

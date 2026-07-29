@@ -111,6 +111,28 @@ CREATE TABLE IF NOT EXISTS decisions (
 );
 CREATE INDEX IF NOT EXISTS decisions_by_room ON decisions (room_id, closed_at);
 
+-- A DM thread is its participant pair, canonically ordered (low_id < high_id),
+-- so sending to the same person from any connection, session, or server
+-- lifetime resumes the one thread (requirements 1.1 #7, resume-by-identity-
+-- pair). The thread row exists so messages have something durable to hang off;
+-- it carries no state of its own.
+CREATE TABLE IF NOT EXISTS dm_threads (
+  id         TEXT PRIMARY KEY,
+  low_id     TEXT NOT NULL REFERENCES participants(id),
+  high_id    TEXT NOT NULL REFERENCES participants(id),
+  created_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS dm_threads_pair ON dm_threads (low_id, high_id);
+
+CREATE TABLE IF NOT EXISTS dm_messages (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  thread_id      TEXT NOT NULL REFERENCES dm_threads(id),
+  participant_id TEXT NOT NULL REFERENCES participants(id),
+  body           TEXT NOT NULL,
+  created_at     INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS dm_messages_by_thread ON dm_messages (thread_id, id);
+
 CREATE TABLE IF NOT EXISTS events (
   seq        INTEGER PRIMARY KEY AUTOINCREMENT,
   kind       TEXT NOT NULL,
@@ -119,6 +141,11 @@ CREATE TABLE IF NOT EXISTS events (
   -- Consumers need this to tell an answer from their own echo.
   actor_id   TEXT,
   payload    TEXT NOT NULL,  -- JSON object
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  -- NULL for the shared feed. A JSON array of participant ids makes the event
+  -- audience-scoped: delivered only to those participants, invisible —
+  -- content and existence both — to every other reader (issue #42, the
+  -- precedent v1 authentication builds on).
+  audience   TEXT
 );
 `;

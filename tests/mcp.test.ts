@@ -65,14 +65,17 @@ test('the surface is plain MCP tools any client can list', async () => {
     'join_room',
     'list_claims',
     'list_decisions',
+    'list_dms',
     'list_open_deliberations',
     'list_participants',
     'list_rooms',
     'post_message',
     'propose',
+    'read_dms',
     'read_messages',
     'release_claim',
     'renew_claim',
+    'send_dm',
     'vote',
     'wait_for_events',
   ]);
@@ -501,16 +504,13 @@ test('an agent arriving mid-deliberation can discover it and act (#35)', async (
   await call(convener, 'identify', { name: 'ada:mid', harness: 'claude-code' });
   await call(convener, 'create_room', { name: 'mid-flight' });
   const proposed = await call(convener, 'propose', {
-    room: 'mid-flight',
-    question: 'adopt the schema pass?',
-    options: ['yes', 'no'],
+    room: 'mid-flight', question: 'adopt the schema pass?', options: ['yes', 'no'],
   });
   const id = (proposed.structuredContent?.deliberation as { id: string }).id;
-
   // The late agent knows only the room. Discovery is the tool's whole job.
   await call(late, 'identify', { name: 'grace:late', harness: 'codex' });
   const found = await call(late, 'list_open_deliberations', { room: 'mid-flight' });
-  const open = found.structuredContent?.deliberations as { id: string; phase: string; cast: string[] }[];
+  const open = found.structuredContent?.deliberations as { id: string; phase: string }[];
   assert.equal(open.length, 1);
   assert.equal(open[0]?.id, id, 'the id it needs to challenge or vote');
   assert.equal(open[0]?.phase, 'challenging');

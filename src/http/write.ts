@@ -163,6 +163,17 @@ function dispatch(
     };
   }
 
+  // A human sends a DM (#42). Same domain call the send_dm tool makes, so the
+  // audience scoping and the counterpart's wake come with it.
+  if (route === 'dms') {
+    const { message, thread } = quorum.sendDm({
+      participantId: str(body, 'participantId'),
+      to: str(body, 'to'),
+      body: str(body, 'body'),
+    });
+    return { message, thread };
+  }
+
   const propose = /^rooms\/([^/]+)\/deliberations$/.exec(route);
   if (propose) {
     const options = body.options;
