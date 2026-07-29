@@ -8,11 +8,10 @@
 // events addressed to them (#42) — without an identity there is nothing to
 // read, and the screen says that instead of pretending an empty inbox.
 
-import { h } from '../../lib/element.js';
 import { api } from './api.js';
 import { openFeed } from './feed.js';
-import { clock } from './format.js';
 import { applyDm, emptyDm } from './dm-model.js';
+import { conversationView, threadHeadView, threadListView } from './dm-views.js';
 import { ensureIdentified, forget, isStaleIdentity, remembered } from './me.js';
 
 /**
@@ -77,85 +76,10 @@ export async function mountDm({ counterpart, doc = document, win = window }) {
 
   const person = (/** @type {string|null|undefined} */ id) => (id && participants.get(id)) || undefined;
 
-  const chipFor = (/** @type {any} */ who, /** @type {string} */ size) =>
-    h('q-identity-chip', {
-      name: who?.name ?? 'unknown',
-      harness: who?.harness === 'human' ? null : who?.harness,
-      kind: who?.harness === 'human' ? 'human' : 'agent',
-      size,
-    });
-
   const render = () => {
-    // The inbox rail.
-    if (regions.threads) {
-      const list = h('nav', { class: 'thread-list', 'aria-label': 'direct messages' });
-      for (const entry of model.threads) {
-        const other = person(entry.counterpartId) ?? { name: entry.counterpartId };
-        list.append(
-          h(
-            'button',
-            {
-              type: 'button',
-              class: `thread${withWhom && entry.counterpartId === withWhom.id ? ' open' : ''}`,
-              onclick: () => pickThread(other.name ?? entry.counterpartId),
-            },
-            chipFor(other, 'sm'),
-            entry.lastMessage ? h('span', { class: 'thread-when' }, clock(entry.lastMessage.createdAt)) : null,
-          ),
-        );
-      }
-      if (model.threads.length === 0) {
-        list.append(
-          h(
-            'div',
-            { class: 'quiet thread-empty' },
-            me ? 'No DM threads yet — the first message starts one.' : 'Name yourself to read your DMs: press send once.',
-          ),
-        );
-      }
-      regions.threads.replaceChildren(list);
-    }
-
-    // The open thread's head: who, and what this surface is not.
-    regions.head?.replaceChildren(
-      withWhom
-        ? h(
-            'div',
-            { class: 'head-stack' },
-            chipFor(withWhom, 'md'),
-            h(
-              'div',
-              { class: 'lede' },
-              'Direct thread, outside any room. Nothing here is deliberated and nothing here becomes a record — take it to a room when it needs a decision.',
-            ),
-          )
-        : h('div', { class: 'lede' }, 'Direct messages, outside any room. Open a thread from the left, or start one from the connect screen roster.'),
-    );
-
-    // The conversation.
-    if (regions.stream) {
-      const rows = h('div', { class: 'rows' });
-      let previous = null;
-      for (const message of model.messages) {
-        const author = person(message.participantId);
-        rows.append(
-          h('q-message-row', {
-            name: author?.name ?? 'unknown',
-            harness: author?.harness,
-            kind: author?.harness === 'human' ? 'human' : 'agent',
-            body: message.body,
-            time: clock(message.createdAt),
-            compact: message.participantId === previous,
-          }),
-        );
-        previous = message.participantId;
-      }
-      if (model.messages.length === 0 && withWhom) {
-        rows.append(h('div', { class: 'empty' }, 'Nothing said yet. A message sent here is visible to the two of you and nobody else.'));
-      }
-      regions.stream.replaceChildren(rows);
-    }
-
+    regions.threads?.replaceChildren(threadListView(model, person, withWhom, Boolean(me), pickThread));
+    regions.head?.replaceChildren(threadHeadView(withWhom));
+    regions.stream?.replaceChildren(conversationView(model, person, withWhom));
     Object.assign(composer, {
       placeholder: withWhom ? `Message ${withWhom.name}` : 'Message',
       disabled: !withWhom,
@@ -171,6 +95,13 @@ export async function mountDm({ counterpart, doc = document, win = window }) {
     void openThread(name);
   };
 
+  /** Held events while a thread paint is in flight. Same reason room.js
+   *  buffers: a dm_message landing between the snapshot read and its
+   *  assignment would fold against the *old* thread and then be overwritten —
+   *  the feed's cursor has moved past it, so it would never come back.
+   *  @type {any[]|null} */
+  let opening = null;
+
   /** @param {string|undefined} ref */
   async function openThread(ref) {
     if (!ref || !me) {
@@ -179,13 +110,25 @@ export async function mountDm({ counterpart, doc = document, win = window }) {
       render();
       return;
     }
-    const painted = await api.dms(me.id, ref);
-    const other =
-      [...participants.values()].find((candidate) => candidate.id === ref || candidate.name === ref) ?? null;
-    withWhom = other;
-    model = { ...model, messages: painted.messages };
-    doc.title = other ? `${other.name} · quorum` : 'messages · quorum';
-    render();
+    opening = [];
+    try {
+      const painted = await api.dms(me.id, ref);
+      const other =
+        [...participants.values()].find((candidate) => candidate.id === ref || candidate.name === ref) ?? null;
+      withWhom = other;
+      model = { ...model, messages: painted.messages };
+      // Drain in arrival order, against the thread that is now open. applyDm
+      // is idempotent by message id, so an event the snapshot already carried
+      // changes nothing.
+      const held = opening;
+      opening = null;
+      for (const event of held) model = applyDm(model, event, me.id, withWhom?.id ?? null);
+      doc.title = other ? `${other.name} · quorum` : 'messages · quorum';
+      render();
+    } catch (error) {
+      opening = null;
+      throw error;
+    }
   }
 
   let started = false;
@@ -216,6 +159,12 @@ export async function mountDm({ counterpart, doc = document, win = window }) {
         if (event.kind === 'participant_identified') {
           participants = new Map(participants).set(event.payload.participant.id, event.payload.participant);
           render();
+          return;
+        }
+        // A thread paint is in flight: hold the event, or it folds against
+        // the thread being left and is then overwritten by the snapshot.
+        if (opening) {
+          opening.push(event);
           return;
         }
         const next = applyDm(model, event, me?.id ?? '', withWhom?.id ?? null);
