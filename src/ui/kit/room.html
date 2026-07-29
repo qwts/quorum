@@ -38,6 +38,11 @@
       .rooms { display: flex; flex-direction: column; }
       .room { appearance: none; background: none; border: none; border-left: var(--border-width-accent) solid transparent; color: var(--text-muted); font: var(--type-body); text-align: left; display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-5); cursor: pointer; transition: var(--transition-hover); }
       .room:hover { background: var(--surface-hover); }
+      /* Occupants under the open room (#56) — existing text styles, indented
+         off the room row's own padding scale. */
+      .occupants-toggle { appearance: none; background: none; border: none; cursor: pointer; text-align: left; font: var(--type-label); letter-spacing: var(--ls-caps); color: var(--text-faint); padding: var(--sp-2) var(--sp-5) var(--sp-2) var(--sp-7); }
+      .occupants-toggle:hover { color: var(--text-muted); }
+      .occupant { font: var(--type-mono); color: var(--text-muted); padding: var(--sp-1) var(--sp-5) var(--sp-1) var(--sp-8); }
       .room.open { border-left-color: var(--brass-500); background: var(--surface-selected); font: var(--type-body-strong); color: var(--text-body); }
       .hash { color: var(--text-faint); }
       .rule-tag { margin-left: auto; font: var(--type-label); letter-spacing: var(--ls-caps); color: var(--text-faint); }

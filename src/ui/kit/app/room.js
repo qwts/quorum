@@ -108,9 +108,20 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
     getRoomName: () => openRoom,
   });
 
+  // Occupants disclosure (#56): open/closed is the person's own choice, per room, session-scoped.
+  const occupants = {
+    me: /** @type {{id: string}|null} */ (null),
+    isOpen: (/** @type {string} */ roomId) => win.sessionStorage?.getItem(`occupants:${roomId}`) !== 'closed',
+    onToggle: (/** @type {string} */ roomId) => {
+      win.sessionStorage?.setItem(`occupants:${roomId}`, occupants.isOpen(roomId) ? 'closed' : 'open');
+      render();
+    },
+  };
+
   const render = () => {
     const current = roomByName(state, openRoom);
-    regions.sidebar?.replaceChildren(sidebarView(state, openRoom, pick));
+    occupants.me = me;
+    regions.sidebar?.replaceChildren(sidebarView(state, openRoom, pick, occupants));
     regions.topbar?.replaceChildren(topBarView(state, current, status));
     // The open deliberation heads the stream: it is the room's current
     // business, and scrolling to find what you are voting on is not a thing

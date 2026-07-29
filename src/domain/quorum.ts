@@ -187,6 +187,18 @@ export function openQuorum(options: QuorumOptions = {}) {
     return toParticipant(row);
   }
 
+  // The one membership ordering (#56): join order, made insertion-stable by
+  // rowid — two joins can share a millisecond, and an ordering that ties on
+  // the clock alone is one the database may answer either way. Every surface
+  // that says who is in a room reads through here; review caught the drift
+  // when there were briefly two of these.
+  function memberIdsOf(roomId: string): string[] {
+    const rows = db
+      .prepare('SELECT participant_id FROM room_members WHERE room_id = ? ORDER BY joined_at, rowid')
+      .all(roomId) as { participant_id: string }[];
+    return rows.map((row) => row.participant_id);
+  }
+
   function isMember(roomId: string, participantId: string): boolean {
     return (
       db.prepare('SELECT 1 FROM room_members WHERE room_id = ? AND participant_id = ?').get(roomId, participantId) !==
@@ -442,28 +454,36 @@ export function openQuorum(options: QuorumOptions = {}) {
       return room;
     },
 
-    listRooms(): (Room & { members: number })[] {
-      const rows = db
-        .prepare(
-          `SELECT r.*, (SELECT COUNT(*) FROM room_members m WHERE m.room_id = r.id) AS members
-           FROM rooms r ORDER BY r.created_at`,
-        )
-        .all() as {
+    listRooms(): (Room & { members: number; memberIds: string[] })[] {
+      // Member ids ride along (#56) so one read paints occupants everywhere;
+      // the count is derived from the list, never tracked beside it, and the
+      // list comes from the one membership query below (issue requirement 3 —
+      // a second SQL path is where the ordering drifted in review).
+      const rows = db.prepare('SELECT * FROM rooms ORDER BY created_at').all() as {
         id: string;
         name: string;
         topic: string | null;
         decision_rule: string;
         created_by: string;
-        members: number;
       }[];
-      return rows.map((row) => ({
-        id: row.id,
-        name: row.name,
-        topic: row.topic,
-        decisionRule: row.decision_rule as DecisionRule,
-        createdBy: row.created_by,
-        members: row.members,
-      }));
+      return rows.map((row) => {
+        const memberIds = memberIdsOf(row.id);
+        return {
+          id: row.id,
+          name: row.name,
+          topic: row.topic,
+          decisionRule: row.decision_rule as DecisionRule,
+          createdBy: row.created_by,
+          members: memberIds.length,
+          memberIds,
+        };
+      });
+    },
+
+    // Who is in a room, in join order (#56): the /who command and the
+    // occupants panel ask this one question, through the one query.
+    listMembers(input: { room: string }): Participant[] {
+      return memberIdsOf(requireRoom(input.room).id).map(requireParticipant);
     },
 
     joinRoom(input: { room: string; participantId: string }): Room {
@@ -723,6 +743,7 @@ export function openQuorum(options: QuorumOptions = {}) {
     resolveParticipant: participantResolver(db, requireParticipant),
     createRoom: (input) => api.createRoom(input),
     listRooms: () => api.listRooms(),
+    listMembers: (input) => api.listMembers(input),
     postMessage: (input) => api.postMessage(input),
   });
 

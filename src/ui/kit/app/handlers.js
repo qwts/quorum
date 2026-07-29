@@ -55,11 +55,21 @@ function appendMessage(state, roomId, message) {
 export const HANDLERS = {
   participant_identified: (state, { payload }) => put(state, 'participants', payload.participant.id, payload.participant),
 
-  room_created: (state, { payload }) => put(state, 'rooms', payload.room.id, { ...payload.room, members: 1 }),
+  room_created: (state, { payload }) =>
+    put(state, 'rooms', payload.room.id, { ...payload.room, memberIds: [payload.room.createdBy], members: 1 }),
 
+  // Membership is the id list (#56); the count derives from it, so the two
+  // can never disagree. Idempotent by id, like every fold here.
   room_joined: (state, { payload }) => {
     const room = state.rooms.get(payload.room.id);
-    const withMember = put(state, 'rooms', payload.room.id, { ...payload.room, members: (room?.members ?? 0) + 1 });
+    const memberIds = [...(room?.memberIds ?? [])];
+    if (!memberIds.includes(payload.participant.id)) memberIds.push(payload.participant.id);
+    const withMember = put(state, 'rooms', payload.room.id, {
+      ...room,
+      ...payload.room,
+      memberIds,
+      members: memberIds.length,
+    });
     return put(withMember, 'participants', payload.participant.id, payload.participant);
   },
 
@@ -70,12 +80,14 @@ export const HANDLERS = {
   status_changed: (state, { payload }) => put(state, 'participants', payload.participant.id, payload.participant),
 
   // A kick (#52) changes membership, not the roster: the participant still
-  // exists, the room is one smaller.
+  // exists, the room is one smaller — and which one smaller is now knowable.
   participant_kicked: (state, { payload }) => {
     const room = state.rooms.get(payload.room.id);
+    const memberIds = (room?.memberIds ?? []).filter((/** @type {string} */ id) => id !== payload.participant.id);
     return put(state, 'rooms', payload.room.id, {
       ...(room ?? payload.room),
-      members: Math.max(0, (room?.members ?? 1) - 1),
+      memberIds,
+      members: memberIds.length,
     });
   },
 

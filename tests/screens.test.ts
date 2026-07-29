@@ -112,6 +112,24 @@ test('the connect commands point at this server, not at the mock port', () => {
   assert.match(String(commands.other), /streamable-HTTP endpoint\nhttp:\/\/127\.0\.0\.1:5151\/mcp/);
 });
 
+test('room membership folds as an id list; the count can never disagree (#56)', () => {
+  const ROOM = { id: 'r1', name: 'protocol', decisionRule: 'majority', createdBy: 'p1', memberIds: ['p1'], members: 1 };
+  const event = (seq: number, kind: string, payload: unknown) => ({ seq, kind, roomId: 'r1', actorId: null, payload });
+
+  let state = seed(emptyState(), { seq: 5, rooms: [ROOM], participants: [] });
+  state = apply(state, event(6, 'room_joined', { room: ROOM, participant: { id: 'p2', name: 'sol' } }));
+  assert.deepEqual(state.rooms.get('r1')?.memberIds, ['p1', 'p2']);
+  assert.equal(state.rooms.get('r1')?.members, 2);
+
+  // Replay is idempotent by id — the feed duplicates on purpose.
+  state = apply(state, { ...event(6, 'room_joined', { room: ROOM, participant: { id: 'p2', name: 'sol' } }), seq: 7 });
+  assert.equal(state.rooms.get('r1')?.members, 2, 'a replayed join adds nobody');
+
+  state = apply(state, event(8, 'participant_kicked', { room: ROOM, participant: { id: 'p1' } }));
+  assert.deepEqual(state.rooms.get('r1')?.memberIds, ['p2'], 'the kicked id is gone, the count follows');
+  assert.equal(state.rooms.get('r1')?.members, 1);
+});
+
 test('the front door paints a room that does not exist yet as empty, not as a failure (#48)', async (t) => {
   // Nothing seeds rooms — an agent creates one with create_room — so on a
   // fresh install the default room's scoped reads 404. That must paint as an
