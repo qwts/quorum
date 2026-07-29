@@ -65,6 +65,20 @@ export const HANDLERS = {
 
   message: (state, { roomId, payload }) => appendMessage(state, roomId, payload.message),
 
+  // Advisory presence (#52): the payload carries the whole participant, so
+  // this is the identify handler's shape — replace, don't merge.
+  status_changed: (state, { payload }) => put(state, 'participants', payload.participant.id, payload.participant),
+
+  // A kick (#52) changes membership, not the roster: the participant still
+  // exists, the room is one smaller.
+  participant_kicked: (state, { payload }) => {
+    const room = state.rooms.get(payload.room.id);
+    return put(state, 'rooms', payload.room.id, {
+      ...(room ?? payload.room),
+      members: Math.max(0, (room?.members ?? 1) - 1),
+    });
+  },
+
   claim_granted: (state, { payload }) => put(state, 'claims', payload.claim.id, payload.claim),
   claim_renewed: (state, { payload }) => put(state, 'claims', payload.claim.id, payload.claim),
   claim_released: (state, { payload }) => drop(state, 'claims', payload.claim.id),

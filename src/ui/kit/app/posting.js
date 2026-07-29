@@ -48,8 +48,16 @@ export function createSender(ports) {
     try {
       // Membership is the protocol's rule, not this screen's; joining is
       // idempotent, so asking every time is cheaper than tracking it wrongly.
-      await ports.join(room, who.id);
-      await ports.post(room, who.id, body);
+      // A slash body is the one exception to join-or-fail: /room must work on
+      // a fresh server where the room in the URL does not exist yet (#52),
+      // and the domain gates commands itself — so the post gets its say, and
+      // a command that does need membership is refused in the domain's words.
+      try {
+        await ports.join(room, who.id);
+      } catch (error) {
+        if (!body.startsWith('/')) throw error;
+      }
+      return await ports.post(room, who.id, body);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (retried || !ports.isStaleIdentity(message)) throw error;
@@ -58,7 +66,7 @@ export function createSender(ports) {
       const renamed = await ports.identify('');
       if (!renamed) throw error;
       ports.setMe(renamed);
-      await deliver(room, body, true);
+      return await deliver(room, body, true);
     }
   }
 
@@ -90,7 +98,11 @@ export function createSender(ports) {
         return;
       }
 
-      await deliver(room, body);
+      const response = /** @type {any} */ (await deliver(room, body));
+
+      // A command's answer (#52) is for this sender alone — the notice slot,
+      // never the stream. /help in a busy room reaches exactly one person.
+      if (response?.command) ports.setNotice(response.command.text);
 
       // Only the submitted text is cleared, and only if it is still the text
       // in the field. The composer stays editable while a post is in flight,

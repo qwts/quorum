@@ -47,6 +47,21 @@ export function quoted(text: string, max = 80): string {
   return JSON.stringify(clipped);
 }
 
+// A room command's reply (#52). The answer can carry participant-authored
+// text — statuses, topics, names — so it rides in data as the value it is,
+// never in guidance: participant content must not read as server instruction.
+export function commandReply(
+  command: { command: string; recorded: boolean; text: string },
+  message: unknown,
+): ToolReply {
+  return {
+    guidance: command.recorded
+      ? `The /${command.command} command ran — data.answer carries its result, and the typed line is on the room's record.`
+      : `The /${command.command} command was answered to you alone — data.answer carries it; nothing was posted.`,
+    data: { answer: command.text, ...(message ? { message } : {}) },
+  };
+}
+
 export function requireIdentity(session: Session): string {
   if (!session.participantId) {
     throw new QuorumError('identify yourself first: call identify with a name and harness');

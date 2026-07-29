@@ -8,8 +8,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { SCHEMA } from './schema.ts';
 import { normalizePatterns, PatternError, scopesOverlap } from './glob.ts';
+import { openCommands } from './commands.ts';
 import { openDeliberations } from './deliberation.ts';
-import { openDms } from './dm.ts';
+import { openDms, participantResolver } from './dm.ts';
 import { QuorumError } from './errors.ts';
 
 export { QuorumError };
@@ -22,6 +23,8 @@ export type Participant = {
   harness: string;
   repo: string | null;
   branch: string | null;
+  /** Advisory presence set by /status or /blocked (#52); never protocol-load-bearing. */
+  status: { text: string; kind: 'status' | 'blocked'; at: number } | null;
 };
 
 export type Room = {
@@ -113,6 +116,9 @@ export function openQuorum(options: QuorumOptions = {}) {
   addColumn('participants', 'cursor', 'INTEGER NOT NULL DEFAULT 0');
   addColumn('messages', 'deliberation_id', 'TEXT');
   addColumn('events', 'audience', 'TEXT');
+  addColumn('participants', 'status', 'TEXT');
+  addColumn('participants', 'status_kind', 'TEXT');
+  addColumn('participants', 'status_at', 'INTEGER');
 
   // Everyone blocked in wait_for_events. Appending an event wakes them all;
   // each re-reads from its own cursor, so there is no per-waiter bookkeeping.
@@ -150,12 +156,35 @@ export function openQuorum(options: QuorumOptions = {}) {
     for (const wake of waiters) wake();
   }
 
+  type ParticipantRow = {
+    id: string;
+    name: string;
+    harness: string;
+    repo: string | null;
+    branch: string | null;
+    status: string | null;
+    status_kind: string | null;
+    status_at: number | null;
+  };
+
+  function toParticipant(row: ParticipantRow): Participant {
+    return {
+      id: row.id,
+      name: row.name,
+      harness: row.harness,
+      repo: row.repo,
+      branch: row.branch,
+      status:
+        row.status === null
+          ? null
+          : { text: row.status, kind: row.status_kind === 'blocked' ? 'blocked' : 'status', at: row.status_at ?? 0 },
+    };
+  }
+
   function requireParticipant(id: string): Participant {
-    const row = db.prepare('SELECT * FROM participants WHERE id = ?').get(id) as
-      | { id: string; name: string; harness: string; repo: string | null; branch: string | null }
-      | undefined;
+    const row = db.prepare('SELECT * FROM participants WHERE id = ?').get(id) as ParticipantRow | undefined;
     if (!row) throw new QuorumError(`unknown participant: ${JSON.stringify(id)} — call identify first`);
-    return { id: row.id, name: row.name, harness: row.harness, repo: row.repo, branch: row.branch };
+    return toParticipant(row);
   }
 
   function isMember(roomId: string, participantId: string): boolean {
@@ -313,7 +342,7 @@ export function openQuorum(options: QuorumOptions = {}) {
   // through the appendEvent they are handed (docs/deliberation.md §8 seams).
   const dms = openDms({ db, now, appendEvent, requireParticipant });
 
-  return {
+  const api = {
     close(): void {
       db.close();
     },
@@ -362,7 +391,7 @@ export function openQuorum(options: QuorumOptions = {}) {
       // A newcomer starts at the head: arriving is not the same as having
       // missed everything that ever happened.
       const head = latestSeq();
-      const participant: Participant = { id: randomUUID(), name, harness, repo, branch };
+      const participant: Participant = { id: randomUUID(), name, harness, repo, branch, status: null };
       db.prepare(
         'INSERT INTO participants (id, name, harness, repo, branch, identified_at, cursor) VALUES (?, ?, ?, ?, ?, ?, ?)',
       ).run(
@@ -379,20 +408,8 @@ export function openQuorum(options: QuorumOptions = {}) {
     },
 
     listParticipants(): Participant[] {
-      const rows = db.prepare('SELECT * FROM participants ORDER BY identified_at').all() as {
-        id: string;
-        name: string;
-        harness: string;
-        repo: string | null;
-        branch: string | null;
-      }[];
-      return rows.map((row) => ({
-        id: row.id,
-        name: row.name,
-        harness: row.harness,
-        repo: row.repo,
-        branch: row.branch,
-      }));
+      const rows = db.prepare('SELECT * FROM participants ORDER BY identified_at').all() as ParticipantRow[];
+      return rows.map(toParticipant);
     },
 
     createRoom(input: { name: string; topic?: string; decisionRule?: DecisionRule; by: string }): Room {
@@ -698,6 +715,19 @@ export function openQuorum(options: QuorumOptions = {}) {
       }
     },
   };
+
+  // Room commands (#52) compose last: /room and /list reach back through the
+  // api so a command and its tool twin are one implementation.
+  const commands = openCommands({
+    db, now, appendEvent, requireParticipant, requireRoom, isMember,
+    resolveParticipant: participantResolver(db, requireParticipant),
+    createRoom: (input) => api.createRoom(input),
+    listRooms: () => api.listRooms(),
+    postMessage: (input) => api.postMessage(input),
+  });
+
+  // The chat write path: commands execute (#52), everything else posts.
+  return { ...api, post: commands.post.bind(commands) };
 }
 
 export type Quorum = ReturnType<typeof openQuorum>;
