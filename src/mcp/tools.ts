@@ -7,46 +7,13 @@
 
 import type { Claim, Quorum } from '../domain/quorum.ts';
 import { QuorumError } from '../domain/quorum.ts';
+import { callDmTool, DM_TOOLS } from './dms.ts';
+import { num, quoted, requireIdentity, str, type Json, type Session, type ToolDefinition, type ToolReply } from './reply.ts';
 
-// A session carries the caller's own cursor. Guidance must never point an
-// agent at the global feed head: an event another participant appended since
-// the caller last read would be skipped forever by following it.
-export type Session = { participantId: string | null; cursor: number };
-
-type Json = Record<string, unknown>;
-
-// Every tool answers with the values *and* the next move. An agent's loop is
-// driven by what its tools hand back, so a bare value leaves it to improvise
-// the next step; a reply that names the step keeps the loop closed without a
-// skill file trying to remember it.
-//
-// The steering text is written by this server. Participant-authored content —
-// names, purposes, message bodies — is data, and never becomes part of the
-// instruction. Where a holder's name has to appear in guidance so the caller
-// knows who to talk to, it goes through `quoted`, which strips anything that
-// could pose as a new directive.
-export type ToolReply = { guidance: string; data: Json };
-
-// Participant-authored text, made safe to appear inside server guidance:
-// one line, bounded, and visibly quoted so it reads as a value.
-//
-// Control characters are not enough. Unicode *format* characters (Cf) survive
-// JSON.stringify untouched, and they attack the eye rather than the parser:
-// U+202E reverses the rendering of everything after it, so a purpose can flip
-// the guidance line it sits inside, and zero-widths let a name display as a
-// name it is not. Visibly quoted is the property this function exists to
-// provide, so both classes go.
-function quoted(text: string, max = 80): string {
-  const flattened = text.replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim();
-  const clipped = flattened.length > max ? `${flattened.slice(0, max - 1)}…` : flattened;
-  return JSON.stringify(clipped);
-}
-
-export type ToolDefinition = {
-  name: string;
-  description: string;
-  inputSchema: Json;
-};
+// The session, the reply shape, and the quoting discipline live in reply.ts,
+// shared with the DM surface in dms.ts. Re-exported so the server keeps one
+// import for the whole surface.
+export type { Session, ToolDefinition, ToolReply } from './reply.ts';
 
 const IDENTIFY: ToolDefinition = {
   name: 'identify',
@@ -335,6 +302,9 @@ export const TOOLS: ToolDefinition[] = [
   JOIN_ROOM,
   POST_MESSAGE,
   READ_MESSAGES,
+  // The DM family (requirements 1.1 #7) lives in dms.ts, schemas and
+  // handlers together, and slots into the surface here.
+  ...DM_TOOLS,
   WAIT_FOR_EVENTS,
   CLAIM_SCOPE,
   RENEW_CLAIM,
@@ -360,23 +330,6 @@ function describeClaim(claim: Claim, holder: string | undefined): string {
   )} for ${quoted(claim.purpose, 60)}`;
 }
 
-function requireIdentity(session: Session): string {
-  if (!session.participantId) {
-    throw new QuorumError('identify yourself first: call identify with a name and harness');
-  }
-  return session.participantId;
-}
-
-function str(args: Json, key: string): string | undefined {
-  const value = args[key];
-  return typeof value === 'string' ? value : undefined;
-}
-
-function num(args: Json, key: string): number | undefined {
-  const value = args[key];
-  return typeof value === 'number' ? value : undefined;
-}
-
 // Every branch answers with values *and* the next call, so the loop closes
 // without an agent having to remember it: identify → claim → work → release,
 // and wait_for_events whenever there is nothing to do. Rule 6 of the contract
@@ -387,6 +340,10 @@ export async function callTool(
   name: string,
   args: Json,
 ): Promise<ToolReply> {
+  // The DM family answers for its own names; everything else is ours.
+  const dm = callDmTool(quorum, session, name, args);
+  if (dm) return dm;
+
   switch (name) {
     case 'identify': {
       const { participant, resumed, claims, cursor, unseen } = quorum.identify({

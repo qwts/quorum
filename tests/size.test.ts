@@ -41,16 +41,16 @@ const RATCHET = 40;
  */
 const EXCEPTIONS: Record<string, { limit: number; why: string }> = {
   'src/domain/quorum.ts': {
-    limit: 690,
-    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany.',
+    limit: 715,
+    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany. Grew the audience filter (#42), which must sit on the one path every feed read shares.',
   },
   'src/domain/deliberation.ts': {
     limit: 570,
     why: 'The protocol state machine. Its phases only make sense read together; the seams it does have are documented in docs/deliberation.md §8.',
   },
   'src/mcp/tools.ts': {
-    limit: 780,
-    why: 'Hand-written JSON Schema, which is verbose by choice — the wire contract is the product (AGENTS.md), so it reads as the contract it is rather than being generated.',
+    limit: 720,
+    why: 'Hand-written JSON Schema, which is verbose by choice — the wire contract is the product (AGENTS.md), so it reads as the contract it is rather than being generated. Ratcheted down when the DM family moved to dms.ts (#42).',
   },
 };
 

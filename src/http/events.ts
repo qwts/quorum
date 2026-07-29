@@ -104,6 +104,15 @@ export function serveEvents(req: IncomingMessage, res: ServerResponse, url: URL,
   // answers; `?after=0` means "everything", no parameter means "from now".
   const start = seqFrom(req.headers['last-event-id']) ?? seqFrom(url.searchParams.get('after')) ?? quorum.latestSeq();
 
+  // `?as=<participant id>` widens the stream to the audience-scoped events
+  // addressed to that participant — the DM screen's live half (#42). Without
+  // it the stream is the shared feed alone, which is why a bystander's page
+  // never learns a DM exists. The id is self-asserted, as identity is on
+  // every v0 surface; the audience filter itself lives in the domain, and it
+  // is the seam v1 auth will back with credentials. Watching still consumes
+  // nothing: this names whose *view* to take, never whose cursor to advance.
+  const viewer = url.searchParams.get('as');
+
   res.writeHead(200, {
     'content-type': 'text/event-stream; charset=utf-8',
     'cache-control': 'no-cache, no-transform',
@@ -133,7 +142,7 @@ export function serveEvents(req: IncomingMessage, res: ServerResponse, url: URL,
     while (open) {
       let batch;
       try {
-        batch = await quorum.waitForEvents({ afterSeq: cursor, timeoutMs: SLICE_MS, participantId: null });
+        batch = await quorum.waitForEvents({ afterSeq: cursor, timeoutMs: SLICE_MS, participantId: null, viewerId: viewer });
       } catch (error) {
         if (!open) return;
         res.write(frame(cursor, 'stream_error', { error: error instanceof Error ? error.message : String(error) }));
