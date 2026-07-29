@@ -47,7 +47,7 @@ export function emptyState() {
  * its read, so the caller opens its stream there and cannot miss anything.
  *
  * @param {State} state
- * @param {{seq: number, rooms?: any[], participants?: any[], claims?: any[], room?: string, messages?: any[]}} painted
+ * @param {{seq: number, rooms?: any[], participants?: any[], claims?: any[], room?: string, messages?: any[], deliberations?: any[]}} painted
  * @returns {State}
  */
 export function seed(state, painted) {
@@ -64,6 +64,34 @@ export function seed(state, painted) {
     next.messages = new Map(state.messages);
     const roomId = painted.messages[0]?.roomId;
     if (roomId) next.messages.set(roomId, [...painted.messages]);
+  }
+  // Merged by id rather than replaced: the paint carries one room's *open*
+  // deliberations, and the closed ones already folded are the record, not
+  // staleness. The API view says who has cast (D6-public); the model keeps
+  // only the count, so the paint and the ballot_cast event agree on shape.
+  if (painted.deliberations) {
+    next.deliberations = new Map(state.deliberations);
+    // The paint is authoritative for the painted room's *live* set. A live
+    // deliberation the fold holds but the paint no longer lists closed while
+    // this page could not hear it — and its closing event sits *behind* the
+    // snapshot's seq, so replay would be rejected as already-folded. The
+    // absence is the fact; keeping the entry would offer a ballot forever.
+    const paintedIds = new Set(painted.deliberations.map((view) => view.id));
+    const roomId = painted.room
+      ? [...next.rooms.values()].find((candidate) => candidate.name === painted.room)?.id
+      : undefined;
+    if (roomId) {
+      for (const [id, deliberation] of next.deliberations) {
+        const live = deliberation.phase === 'challenging' || deliberation.phase === 'voting';
+        if (live && deliberation.roomId === roomId && !paintedIds.has(id)) next.deliberations.delete(id);
+      }
+    }
+    for (const view of painted.deliberations) {
+      next.deliberations.set(view.id, {
+        ...view,
+        cast: Array.isArray(view.cast) ? view.cast.length : view.cast,
+      });
+    }
   }
   return next;
 }

@@ -314,3 +314,33 @@ test('an explicit after=0 on the DM route reads forward from the beginning, not 
     ['walk 3', 'walk 4'],
   );
 });
+
+test('a page opened mid-deliberation gets it in the first paint — options and turnout, never a ballot (#35)', async () => {
+  const deliberating = quorum.createRoom({ name: 'mid-vote', by: dana.id });
+  quorum.joinRoom({ room: 'mid-vote', participantId: codex.id });
+  const deliberation = quorum.propose({
+    participantId: dana.id,
+    room: deliberating.id,
+    question: 'ship the alpha?',
+    options: ['now', 'after the beta'],
+  });
+  quorum.closeChallenges({ participantId: dana.id, deliberationId: deliberation.id });
+  quorum.vote({ participantId: codex.id, deliberationId: deliberation.id, choice: 0, dissent: 'noted' });
+
+  // The page loads *now*, mid-vote. Before this route, its fold started empty
+  // and the open deliberation was invisible until the next event on it.
+  const painted = await get('/api/rooms/mid-vote/deliberations');
+  assert.equal(painted.status, 200);
+  assert.equal(typeof painted.body.seq, 'number', 'stamped before the read, like every other paint');
+  assert.ok(painted.body.seq <= quorum.latestSeq());
+
+  const open = painted.body.deliberations;
+  assert.equal(open.length, 1);
+  assert.equal(open[0].id, deliberation.id);
+  assert.equal(open[0].phase, 'voting');
+  assert.deepEqual(open[0].options, ['now', 'after the beta'], 'the ballot is castable from the paint alone');
+  assert.deepEqual(open[0].cast, [codex.id], 'turnout says who has cast (D6), never what');
+  const raw = JSON.stringify(painted.body);
+  assert.ok(!raw.includes('"choice"'), 'no choice leaks through the paint');
+  assert.ok(!raw.includes('noted'), 'no dissent either');
+});

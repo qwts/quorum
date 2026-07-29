@@ -271,6 +271,20 @@ const GET_DELIBERATION: ToolDefinition = {
   },
 };
 
+const LIST_OPEN_DELIBERATIONS: ToolDefinition = {
+  name: 'list_open_deliberations',
+  description:
+    'The deliberations a room is running right now — id, question, options, phase, deadline, who has cast. ' +
+    'Call this after joining a room mid-deliberation to find what you can still challenge or vote on. ' +
+    'Never what anyone chose: ballots surface only in the record, after close.',
+  inputSchema: {
+    type: 'object',
+    properties: { room: { type: 'string', description: 'Room name or id.' } },
+    required: ['room'],
+    additionalProperties: false,
+  },
+};
+
 const LIST_DECISIONS: ToolDefinition = {
   name: 'list_decisions',
   description: 'Immutable decision records, newest first, optionally for one room. Failures are records too.',
@@ -315,6 +329,7 @@ export const TOOLS: ToolDefinition[] = [
   CLOSE_CHALLENGES,
   VOTE,
   GET_DELIBERATION,
+  LIST_OPEN_DELIBERATIONS,
   LIST_DECISIONS,
   GET_DECISION,
 ];
@@ -676,6 +691,21 @@ export async function callTool(
       return {
         guidance: `Phase: ${view.phase}. ${verb}`,
         data: { deliberation: view },
+      };
+    }
+
+    case 'list_open_deliberations': {
+      const deliberations = quorum.listOpenDeliberations({ room: str(args, 'room') ?? '' });
+      const moves = deliberations
+        .map((view) => `${view.id.slice(0, 8)} is ${view.phase}`)
+        .join(', ');
+      return {
+        guidance:
+          deliberations.length === 0
+            ? 'Nothing is being deliberated in that room right now. propose to convene, or wait_for_events to hear one open.'
+            : `${deliberations.length} open deliberation(s): ${moves}. challenge while a window is open, vote when ` +
+              `voting is — get_deliberation for any one of them, and wait_for_events to be woken at each phase change.`,
+        data: { deliberations },
       };
     }
 
