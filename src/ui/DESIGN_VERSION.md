@@ -7,8 +7,8 @@ discovered.** This file is the receipt. Copy it into the library root and keep i
 
 ```
 design_system: quorum-design-system
-design_version: 0.3.0
-captured_at: 2026-07-26
+design_version: 0.4.0
+captured_at: 2026-07-28
 source_project: Quorum Design System (Anthropic Design tool)
 upstream_repo: qwts/quorum (branch main)
 components: 8          # MessageRow, IdentityChip, ProposalCard, PhaseStepper, VoteChip, DissentBadge, DecisionCard, Composer
@@ -16,6 +16,16 @@ screens: 6             # room, deliberation, overlay, records, dm, connect
 tokens: 139
 foundation_cards: 17
 ```
+
+`0.4.0` is the receipt for the live components the 0.3.0 receipt had drifted from (#38), plus the
+2026-07-28 rulings on #19. One removal, called out first: **VoteChip's `ballot` union is gone** — a
+v0 ballot is an option index, `choice?: number` replaces it. Added: VoteChip `pending` and
+`onClick`-gated button semantics; PhaseStepper `failureKind`; ProposalCard `eligible` / `eligibleAt`
+/ `roomMembers`; DecisionCard `reason` (`summary` deprecated), `challengeRefs`, `onOpen`. Ruled: Q6
+ballot copy follows D6 (*re-cast until the phase closes — the last ballot counts*); Q10 `hidden` is
+ballot secrecy only — `ProposalOption.hidden` is removed from the contract and the reference JSX no
+longer forwards it, so option labels always render. The receipt now also lives at the design
+project's root, describing the live sources; the `_handoff_*` snapshots keep frozen copies.
 
 `0.3.0` adds the **composer** — the input `--rail-composer-min` reserved space for and the first pass
 never specified. It is a design-system primitive (`components/composer/Composer.jsx` + `.d.ts` +
@@ -33,7 +43,7 @@ Record the version the library implements, next to the code:
 
 ```json
 // src/ui/design-version.json
-{ "implements": "0.3.0", "verified": "2026-07-26" }
+{ "implements": "0.4.0", "verified": "2026-07-28" }
 ```
 
 ## Sync procedure
@@ -59,3 +69,4 @@ Record the version the library implements, next to the code:
 | 0.1.0 | 2026-07-24 | first pass: foundations, 7 components, 5 screens | — |
 | 0.2.0 | 2026-07-25 | failure kinds typed; `phase_ends_at`; derived/frozen quorum; private refusals; challenge-copy rule; deliberation overlay | — |
 | 0.3.0 | 2026-07-26 | `Composer` promoted to a primitive (8th component): message-not-ballot rule, `phase`/`phaseEndsAt`, private `notice`, `disabled` + `disabledReason`. No token or prop changes. | — |
+| 0.4.0 | 2026-07-28 | live-component receipt (#38): VoteChip `ballot`→`choice` (removal), `pending`; PhaseStepper `failureKind`; ProposalCard frozen-roster props; DecisionCard `reason`/`challengeRefs`/`onOpen`. Rulings: Q6 copy follows D6; Q10 `hidden` = ballot secrecy only, `ProposalOption.hidden` removed. | 0.4.0 |

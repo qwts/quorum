@@ -144,7 +144,14 @@ library implements the two-value union and records the delta as `D-1` in
   component internals.
 - **Blocking?** no.
 
-### Q10 — The reference JSX and screenshot 04 disagree about `ProposalOption.hidden`
+### Q10 — The reference JSX and screenshot 04 disagree about `ProposalOption.hidden` — **CLOSED 2026-07-28**
+
+> Ruled on the design side (#19): `hidden` means **ballot secrecy only** — it conceals what a cast
+> ballot says, never an option's label. The screenshot was the intent; the reference JSX was the
+> bug. Upstream, `ProposalCard.jsx` no longer forwards `hidden={o.hidden}` and
+> `ProposalOption.hidden` is removed from the `.d.ts` (design 0.4.0). This library already did the
+> right thing — the rule in `optionChipProps()` stands, now backed by the contract instead of a
+> screenshot reading.
 - **Where:** `design/components/deliberation/ProposalCard.jsx`, which forwards
   `hidden={o.hidden}` to `VoteChip`'s own `hidden`, versus screenshot
   `04-room-voting.png`.

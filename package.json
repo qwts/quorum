@@ -14,7 +14,7 @@
     "dev:tls": "sh scripts/dev-tls.sh"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0"
+    "@modelcontextprotocol/sdk": "1.29.0"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
