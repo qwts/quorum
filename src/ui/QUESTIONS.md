@@ -45,7 +45,8 @@ The human ruling is yes: every refused attempt appends a shared
 `claim_refused` event with the actor, requested scope, and conflicting claim
 ids, while the caller's refusal reply stays unchanged. The staged hinge is now
 flipped: the row has a `seq`, no private visibility attribute, and is ordinary
-shared history.
+shared history. The gallery expresses that settled row; the live room still
+needs claim-event row composition before it can render the shared history.
 
 ### Q5 — `VoteChip.ballot` typed `'for' | 'against' | 'abstain'` — **CLOSED 2026-07-26**
 
