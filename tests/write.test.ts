@@ -288,24 +288,37 @@ test('a text/plain tool call cannot skip the preflight on /mcp (#32)', async () 
   // attempt into a preflight this server never answers. That insistence
   // lives in the SDK, not in this repo, so pin it: if an upgrade ever
   // relaxes it, this is the test that says the quiet assumption broke.
-  const simple = await new Promise<{ status: number }>((resolve, reject) => {
+  //
+  // The Accept header is the valid MCP one on purpose: the transport checks
+  // Accept before Content-Type, so without it the request dies a 406 and the
+  // content-type path this test exists to pin goes unexercised (#69 review).
+  const simple = await new Promise<{ status: number; body: any }>((resolve, reject) => {
     const req = httpRequest(
       {
         host: '127.0.0.1',
         port: server.port,
         path: MCP_PATH,
         method: 'POST',
-        headers: { host: `127.0.0.1:${server.port}`, origin: 'null', 'content-type': 'text/plain' },
+        headers: {
+          host: `127.0.0.1:${server.port}`,
+          origin: 'null',
+          accept: 'application/json, text/event-stream',
+          'content-type': 'text/plain',
+        },
       },
       (res) => {
-        res.resume();
-        res.on('end', () => resolve({ status: res.statusCode ?? 0 }));
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk) => chunks.push(chunk));
+        res.on('end', () =>
+          resolve({ status: res.statusCode ?? 0, body: JSON.parse(Buffer.concat(chunks).toString()) }),
+        );
       },
     );
     req.on('error', reject);
     req.end(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }));
   });
-  assert.ok(simple.status >= 400, `a simple-request content type must be refused, got ${simple.status}`);
+  assert.equal(simple.status, 415, 'the refusal is the content-type check, not some earlier gate');
+  assert.match(String(simple.body.error?.message), /Content-Type/i);
 });
 
 test('a malformed path is a bad request, not a server fault', async () => {
