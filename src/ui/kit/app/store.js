@@ -71,6 +71,21 @@ export function seed(state, painted) {
   // only the count, so the paint and the ballot_cast event agree on shape.
   if (painted.deliberations) {
     next.deliberations = new Map(state.deliberations);
+    // The paint is authoritative for the painted room's *live* set. A live
+    // deliberation the fold holds but the paint no longer lists closed while
+    // this page could not hear it — and its closing event sits *behind* the
+    // snapshot's seq, so replay would be rejected as already-folded. The
+    // absence is the fact; keeping the entry would offer a ballot forever.
+    const paintedIds = new Set(painted.deliberations.map((view) => view.id));
+    const roomId = painted.room
+      ? [...next.rooms.values()].find((candidate) => candidate.name === painted.room)?.id
+      : undefined;
+    if (roomId) {
+      for (const [id, deliberation] of next.deliberations) {
+        const live = deliberation.phase === 'challenging' || deliberation.phase === 'voting';
+        if (live && deliberation.roomId === roomId && !paintedIds.has(id)) next.deliberations.delete(id);
+      }
+    }
     for (const view of painted.deliberations) {
       next.deliberations.set(view.id, {
         ...view,

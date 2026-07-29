@@ -101,6 +101,9 @@ export async function paintRoom(room) {
   ]);
   return {
     seq: Math.min(rooms.seq, participants.seq, claims.seq, messages.seq, deliberations.seq),
+    // Which room this paint is of, so the seed can retire live deliberations
+    // the paint no longer lists (their close happened behind the snapshot).
+    room,
     rooms: rooms.rooms,
     participants: participants.participants,
     claims: claims.claims,
