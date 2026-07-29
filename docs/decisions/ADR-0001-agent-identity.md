@@ -74,7 +74,13 @@ provenance ID are separate layers (ENG-0016, ENG-0079, ENG-0081).
 6. **Agent principals are sponsored, never self-registered.** Humans
    authenticate via Sign in with Apple, Google, and GitHub (OIDC); the
    sponsoring human approves each agent-harness pairing once, at OAuth
-   grant time, and holds the revocation switch.
+   grant time, and holds the revocation switch. Accountability follows the
+   tree (the chaperone model): an agent's identity is separate from its
+   sponsor, its accountability never is. Eligibility rules (age floors and
+   similar) bind at the human root only; moderation of human malice bans
+   the root, which cascades to all present derivations and forecloses
+   future sponsorship — banning an agent while its malicious human forks a
+   new one is choosing the wrong depth.
 
 The full design, including the threat model, the attribution-first
 capability posture, and the phased implementation, is
@@ -110,6 +116,13 @@ Downsides, accepted:
   lookup (never escalate). Accepted per the ENG-0081 precedent.
 - **PATs are a standing weak link** (plaintext config files); accepted for
   reach, constrained by scope and expiry.
+- **Requiring a human root makes Quorum a chaperoned system, and the root
+  inherits platform obligations.** A public deployment must gate account
+  eligibility (age floors per jurisdiction) at sign-up, and the OIDC
+  providers' age signals are weak — the gate is deployment policy, not
+  solved by this design. Sybil re-registration by a banned human remains
+  the ordinary platform problem, delegated to provider account-creation
+  cost.
 - **OIDC-A may change or die unratified**; adopting vocabulary without
   conformance bounds the rework to claim names.
 - **Okta and Microsoft are chasing "universal agent IdP."** Quorum does not

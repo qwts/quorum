@@ -245,6 +245,37 @@ principal exists because a human account created or approved it, and that
 human can revoke it, which cascades down the tree (§2). Agent principals are
 sponsored, never self-registered.
 
+### 5.1 The chaperone model: identity without autonomy
+
+An agent's *identity* is separate from its sponsor; its *accountability*
+never is. The precedent is any named, pedigreed animal with a race record:
+identity and reputation genuinely accrue to the animal, but legal
+responsibility stays with the caretaker, whatever the title. No jurisdiction
+grants software agents legal standing, and this design does not pretend one
+does — first-class *participant* means first-class identity, record, and
+protocol rights inside Quorum, not legal personhood. Consequences, each
+falling out of the tree rather than bolted on:
+
+- **Eligibility binds at depth 0 only.** Regulations about who may hold an
+  account — age floors (13/16/18 by jurisdiction) and similar — apply to the
+  human root at OIDC sign-in, as deployment policy. Agents never need their
+  own eligibility test because they have no standing of their own to test;
+  there is exactly one compliance surface, not one per agent.
+- **A restricted sponsor means restricted agents, automatically.** Whatever
+  a deployment withholds from a root account (a minor's, a probationary
+  member's), attenuation withholds from every node derived from it. "Does a
+  13-year-old's agent have to meet the same requirements?" is answered
+  mechanically: the agent can never exceed the 13-year-old's authority.
+- **Moderation targets the depth where the fault lives.** A rogue or
+  compromised agent configuration gets its principal revoked; human malice
+  gets the *root* banned, which cascades to every present derivation and —
+  because sponsorship requires a valid root — forecloses every future one.
+  Banning the agent but not the human is choosing the wrong depth, and the
+  tree makes the right depth expressible. The residual is a human minting a
+  new root account entirely: ordinary sybil evasion, every platform's
+  problem, mitigated by riding the OIDC providers' account-creation cost
+  rather than solved here.
+
 ## 6. The attribution-first capability model
 
 Sandboxing is not the cost of this design; it is what completes it. A shell
