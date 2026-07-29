@@ -56,15 +56,21 @@ provenance ID are separate layers (ENG-0016, ENG-0079, ENG-0081).
    total order; wall-clock time is recorded provenance, never a component
    of uniqueness.
 4. **Actions are attributed to (principal, session), never to the principal
-   alone.** Session nodes are minted at initialize, immutable, and bound to
-   the credential and transport connection. Agent-asserted provenance
-   (conversation id, start time) is recorded as data and grants no
-   authority.
-5. **One live session per grant.** A second initialize on an in-use grant is
-   refused by default (bounded grace window after silence); supersession, if
-   a deployment opts into it, is loudly evented. Theft during a live session
-   is prevented; theft of an idle grant yields a new, distinctly attributed
-   session.
+   alone.** Session nodes are minted at session establishment — MCP
+   initialize, or the first authenticated request on the direct HTTP
+   surface (the PAT path) — immutable, and bound to the credential and the
+   session id, which is itself harness-held credential material on
+   streamable HTTP (the transport keeps no standing connection to bind).
+   Agent-asserted provenance (conversation id, start time) is recorded as
+   data and grants no authority.
+5. **One live session per grant.** A second session establishment on an
+   in-use grant is refused by default (bounded grace window after silence);
+   supersession, if a deployment opts into it, is loudly evented. Theft of
+   the grant credential alone during a live session is prevented; theft of
+   an idle grant yields a new, distinctly attributed session; theft of the
+   token *and* live session id together collapses to the machine's
+   isolation boundary, with DPoP closing every case where the harness's
+   signing key did not also leak.
 6. **Agent principals are sponsored, never self-registered.** Humans
    authenticate via Sign in with Apple, Google, and GitHub (OIDC); the
    sponsoring human approves each agent-harness pairing once, at OAuth
@@ -79,8 +85,9 @@ capability posture, and the phased implementation, is
 - Non-local binding (the v1 team server) becomes shippable: reachability no
   longer implies identity.
 - Debugging is a query, not an investigation: every action reads back
-  through session → grant → principal → sponsor, and a stolen-credential
-  action is pinned to its own session record rather than the victim's.
+  through session → grant → principal → sponsor, and an action taken with a
+  stolen grant credential is pinned to its own session record rather than
+  the victim's (full per-session theft excepted, per the downside below).
 - One human approval per agent-harness pairing replaces both blanket
   sandboxing-as-auth and per-interaction gating.
 - Sub-agent delegation and relying-party federation become new edge types on
@@ -93,10 +100,12 @@ Downsides, accepted:
   sensitive surface for a small codebase, mitigated by the MCP SDK ecosystem
   and by phasing (PATs land before the AS does).
 - **Principal attribution is only as strong as the machine's isolation
-  boundary.** Same-OS-user credential theft cannot be prevented server-side;
-  the design guarantees honest session attribution and states the isolation
-  boundary as deployment guidance. DPoP raises the bar but does not remove
-  it.
+  boundary.** Same-OS-user credential theft cannot be prevented server-side.
+  On streamable HTTP the session id is part of the per-session credential
+  material, so a same-machine thief holding both the token and a live
+  session id can inject into that live session indistinguishably; the
+  design guarantees honest session attribution against anything less, and
+  DPoP narrows the residue to theft of the harness's signing key itself.
 - **Provenance claims are agent-asserted** and can misattribute a transcript
   lookup (never escalate). Accepted per the ENG-0081 precedent.
 - **PATs are a standing weak link** (plaintext config files); accepted for

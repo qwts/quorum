@@ -157,9 +157,13 @@ Harnesses that only support static headers, and skills or scripts that call
 the HTTP API directly, use a Quorum-minted PAT: same principal, same
 derivation tree, narrower scopes, explicit expiry. A PAT is resolved from the
 environment or OS keychain by the consuming script and is **never printed
-into context**. PATs are the weakest link (plaintext in config files is
-readable by any same-user process) and the docs treat them as such: prefer
-OAuth wherever the harness supports it; scope and expire PATs aggressively.
+into context**. PAT-backed access participates in the same session model as
+MCP (§4.1): the first authenticated request on the HTTP surface mints the
+session node, so `(principal, session)` attribution holds on every
+credentialed surface, not only behind an MCP initialize. PATs are the
+weakest link (plaintext in config files is readable by any same-user
+process) and the docs treat them as such: prefer OAuth wherever the harness
+supports it; scope and expire PATs aggressively.
 
 ### 3.3 Token format
 
@@ -175,14 +179,16 @@ direction (§7) open at near-zero cost.
 designed-in extension point: sender-constrained tokens make a copied bearer
 token unusable without the harness's signing key. It does not survive theft
 of the key itself by the same OS user — which is why §6 exists — but it
-closes the cheap copy-the-token attack class.
+closes the cheap copy-the-token attack class, including in-session injection
+by a thief who copied the token and session id but not the key (§4.1).
 
 ## 4. Sessions and attribution
 
 ### 4.1 Attribute to (principal, session), never principal alone
 
 The grant credential is good for exactly one thing at the wire: opening a
-session. At the first authenticated initialize, the server mints an immutable
+session — an MCP initialize, or the first authenticated request on the
+direct HTTP surface (the PAT path, §3.2). The server mints an immutable
 session node — allocated id, position in the total order, start time, source
 address, harness user-agent, and the agent's *asserted* conversation id and
 start time. Every subsequent action row carries the session id. Asserted
@@ -191,26 +197,41 @@ provenance is **data, never authority** (the
 pattern applied in-product): lying about a conversation id can misattribute a
 transcript lookup, never escalate a privilege.
 
-This is what makes attribution honest under theft. A thief holding agent A's
-credential cannot inject into A's live session — that session is bound to the
-transport connection A opened. The thief's only move is a *new* session, which
-arrives with its own allocated node, timestamp, and origin. The malicious
-action is recorded against that session, so the operator debugging it reads a
-forensic record of a distinct connection instead of chasing ghosts through
-A's real transcript. The principal label may be stolen; the session label
-cannot be.
+One property the transport forces into the open: streamable HTTP keeps no
+standing connection — every JSON-RPC message is a fresh POST, and session
+continuity is the `mcp-session-id` header. **The session id is therefore
+part of the credential material**: presented alongside the token on every
+call, validated against the binding minted at initialize, held by the
+harness, never the model. What that yields under theft:
+
+- A thief holding agent A's *grant credential alone* cannot enter A's live
+  session — the live session id is a second secret they do not have. Their
+  only move is a new session establishment, which §4.2 refuses while A's
+  session is live; even when it succeeds against an idle grant, the action
+  lands in a new session node with its own allocated id, timestamp, and
+  origin. The operator debugging it reads a forensic record of a distinct
+  session instead of chasing ghosts through A's real transcript.
+- A same-machine thief who copies *both* the token and the live session id
+  can inject into the live session. That is the same-OS-user boundary of
+  §1.2 and §6, not a new hole — and DPoP (§3.3) closes it for every case
+  where the token and session id leak without the harness's signing key.
+  Within a shared OS user, deployment isolation (§6) is the fix; the server
+  cannot distinguish that thief from the agent, and this design says so
+  rather than pretending otherwise.
 
 ### 4.2 One live session per grant
 
-A second initialize on a grant whose session is live is **refused by
-default**, with a bounded grace window after a session goes silent so a
+A second session establishment on a grant whose session is live is **refused
+by default**, with a bounded grace window after a session goes silent so a
 crashed harness can resume without human intervention. Deployments may opt
 into admit-and-supersede (the "logged in on a new device" model) instead.
 Either way the event is loud: a `session_superseded` or refused-fork event on
 the feed, visible to the sponsoring human, whose revocation of the grant is
-one action away. Consequences: theft during an active session is *prevented*,
-not merely detected; theft of an idle grant still yields a new, distinctly
-attributed session.
+one action away. Consequences: theft of the grant credential alone during an
+active session is *prevented*, not merely detected; theft of an idle grant
+still yields a new, distinctly attributed session; theft of the full
+per-session credential set (token and live session id together) collapses to
+the same-machine boundary stated in §4.1 and §6.
 
 ## 5. Humans
 
