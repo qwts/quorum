@@ -495,3 +495,21 @@ test('an older refresh cannot replace a newer history', () => {
   assert.equal(isFresher(0, -1), true, 'the first paint always lands');
   assert.equal(isFresher(undefined as any, 5), false, 'a response with no stamp cannot be ordered, so it is not trusted');
 });
+
+test('a repaint retires a live deliberation the paint no longer lists (#35)', () => {
+  // The close happened while this page could not hear it — feed down, or a
+  // room switched away from. The closing event sits *behind* the repaint's
+  // seq, so replay is rejected as already-folded; the paint's silence is the
+  // only messenger, and it must be believed or the ballot is offered forever.
+  const opened = apply(painted(), event(11, 'deliberation_opened', {
+    deliberationId: 'd1', deliberation: DELIBERATION, by: 'codex:api',
+  }, 'r1'));
+  assert.equal(liveDeliberations(opened, 'r1').length, 1);
+
+  const repainted = seed(opened, { seq: 20, room: 'protocol', deliberations: [] });
+  assert.deepEqual(liveDeliberations(repainted, 'r1'), [], 'gone — the room has no current business');
+
+  // A repaint of a *different* room says nothing about this one.
+  const other = seed(opened, { seq: 20, room: 'elsewhere', rooms: [ROOM, { id: 'r2', name: 'elsewhere' }], deliberations: [] });
+  assert.equal(liveDeliberations(other, 'r1').length, 1, 'absence is a fact about the painted room only');
+});
