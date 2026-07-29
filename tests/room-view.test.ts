@@ -370,11 +370,34 @@ test('a closed deliberation stops being the room\'s current business', () => {
   }
 });
 
+test('a paint carries the room\'s open deliberation, and the feed takes over from it (#35)', () => {
+  // The bug this guards: a page loaded mid-deliberation folded from events
+  // alone, so the live proposal was invisible until the next event on it —
+  // and the phase could close without the late arrival ever seeing a ballot.
+  const state = seed(painted(), {
+    seq: 12,
+    deliberations: [{ ...DELIBERATION, phase: 'voting', rule: 'majority', cast: ['p2'] }],
+  });
+
+  const [live] = liveDeliberations(state, 'r1');
+  assert.equal(live.id, 'd1');
+  assert.equal(live.phase, 'voting');
+  assert.deepEqual(live.options, DELIBERATION.options, 'the ballot is castable from the paint alone');
+  assert.equal(live.cast, 1, 'the model keeps turnout as a count, matching what ballot_cast will say');
+
+  // The fold continues from the seeded entry — the paint seeds, the feed owns
+  // every change after.
+  const voted = apply(state, event(13, 'ballot_cast', { deliberationId: 'd1', by: 'codex:api', cast: 2, eligible: 2 }, 'r1'));
+  assert.equal(voted.deliberations.get('d1').cast, 2);
+  const closed = apply(voted, event(14, 'deliberation_converged', { deliberationId: 'd1', chosen: 0 }, 'r1'));
+  assert.deepEqual(liveDeliberations(closed, 'r1'), [], 'and it can close a deliberation it painted');
+});
+
 test('an event for a deliberation we never saw changes nothing', () => {
-  // A page opened mid-deliberation has no snapshot to start from — the read
-  // API has no route for an open one. Half-creating from a later event would
-  // draw a card with a phase and no question, which is worse than drawing
-  // nothing until the page is reloaded.
+  // A page opened mid-deliberation seeds from the paint — but an event can
+  // still name a deliberation this fold has never held (a room switched away
+  // from, a paint that failed). Half-creating from a later event would draw a
+  // card with a phase and no question, which is worse than drawing nothing.
   const state = painted();
   const orphan = apply(state, event(11, 'ballot_cast', { deliberationId: 'ghost', by: 'Dana', cast: 1, eligible: 2 }, 'r1'));
   assert.equal(orphan.deliberations.size, 0);

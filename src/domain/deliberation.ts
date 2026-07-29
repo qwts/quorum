@@ -488,6 +488,26 @@ export function openDeliberations(deps: Deps) {
       };
     },
 
+    // The room's open deliberations, in the same view getDeliberation gives:
+    // who has cast is visible, choices and dissent are not (D6). Plural
+    // because propose refuses many things but not a second live deliberation
+    // in a room; soonest deadline first, because that is the phase a late
+    // arrival has the least time left to meet.
+    listOpenDeliberations(input: { room: string }): DeliberationView[] {
+      sweep();
+      const room = requireRoom(input.room);
+      const rows = db
+        .prepare(
+          "SELECT * FROM deliberations WHERE room_id = ? AND phase IN ('challenging','voting') ORDER BY phase_ends_at",
+        )
+        .all(room.id) as DeliberationRow[];
+      return rows.map((row) => ({
+        ...toDeliberation(row),
+        rule: room.decisionRule,
+        cast: ballotsFor(row.id).map((ballot) => ballot.participant_id),
+      }));
+    },
+
     listDecisions(input: { room?: string } = {}): DecisionSummary[] {
       sweep();
       const roomId = input.room ? requireRoom(input.room).id : null;
