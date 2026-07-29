@@ -226,3 +226,24 @@ asked for a name once`.
 - **Blocking?** no — but if the floating-panel dimensions are meant to be
   designed values, they need tokens; and the pulse needs either a duration
   token above 220ms or the mocks need their animation removed.
+
+### Q14 — Convening a deliberation has no designed input flow
+
+- **Where:** the room screen; requirements 1.1 #9 says a human can *convene*
+  through the web UI, and `POST /api/rooms/:room/deliberations` is live.
+- **What I needed:** a designed way to collect a question and two-to-ten
+  options from a human. The composer is a message field with optional
+  `actions`; the mocks show a `propose` action label but no screen that
+  gathers a proposal's fields, and the library ships no dialog or form
+  primitive (deliberately — see Q12).
+- **Why the system does not answer it:** a proposal is multi-field input, and
+  every existing input in the system is single-field. Q12's ruling (the
+  browser's own `prompt()` is acceptable platform chrome for the *name*)
+  could stretch to three chained prompts, but a three-prompt convening flow
+  is a UX decision nobody designed, and copy is normative here.
+- **What I did instead:** did not wire it. Agents convene over MCP (the
+  route and the tool are the same domain call); humans challenge, vote, and
+  read the record through the overlay. Release notes state 1.1 #9 as
+  partial on exactly this line.
+- **Blocking?** no for alpha; **yes for the acceptance walk (#21)**, which
+  traces 1.1 #9 in full.
