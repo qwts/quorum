@@ -39,6 +39,7 @@ export function recordView(summary, record) {
     card.options = props.options;
     card.silent = props.silent;
     card.dissents = props.dissents;
+    card.challengeRefs = props.challengeRefs;
   }
   return card;
 }

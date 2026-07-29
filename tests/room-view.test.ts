@@ -375,8 +375,7 @@ test('a closed deliberation stops being the room\'s current business', () => {
 
 test('a paint carries the room\'s open deliberation, and the feed takes over from it (#35)', () => {
   // The bug this guards: a page loaded mid-deliberation folded from events
-  // alone, so the live proposal was invisible until the next event on it —
-  // and the phase could close without the late arrival ever seeing a ballot.
+  // alone, so the live proposal was invisible until the next event on it.
   const state = seed(painted(), {
     seq: 12,
     deliberations: [{ ...DELIBERATION, phase: 'voting', rule: 'majority', cast: ['p2'] }],
@@ -388,8 +387,7 @@ test('a paint carries the room\'s open deliberation, and the feed takes over fro
   assert.deepEqual(live.options, DELIBERATION.options, 'the ballot is castable from the paint alone');
   assert.equal(live.cast, 1, 'the model keeps turnout as a count, matching what ballot_cast will say');
 
-  // The fold continues from the seeded entry — the paint seeds, the feed owns
-  // every change after.
+  // The paint seeds, the feed owns every change after.
   const voted = apply(state, event(13, 'ballot_cast', { deliberationId: 'd1', by: 'codex:api', cast: 2, eligible: 2 }, 'r1'));
   assert.equal(voted.deliberations.get('d1').cast, 2);
   const closed = apply(voted, event(14, 'deliberation_converged', { deliberationId: 'd1', chosen: 0 }, 'r1'));
@@ -439,6 +437,7 @@ const RECORD = {
     { participantId: 'p2', name: 'Dana', choice: 0, dissent: null },
     { participantId: 'p3', name: 'devin:tests', choice: 1, dissent: 'The field defaults on, which ships the risk the challenge was about.' },
   ],
+  challengeMessageIds: [1857, 1858],
 };
 
 test('a record names who never cast, not just how many did', () => {
@@ -455,6 +454,11 @@ test('a record names who never cast, not just how many did', () => {
   assert.deepEqual(props.options[0]?.voters, ['codex:api', 'Dana']);
 
   assert.deepEqual(props.dissents, [{ name: 'devin:tests', note: RECORD.ballots[2]?.dissent }]);
+
+  // The challenges the record cites, by seq (D4) — the record references
+  // messages, never copies them, and the citation trail must survive the trip
+  // from domain record to card (design 0.4.0 DecisionCard.challengeRefs).
+  assert.deepEqual(props.challengeRefs, [1857, 1858]);
 });
 
 test('an unopened record shows a summary and claims no tally', () => {
@@ -500,13 +504,10 @@ test('an older refresh cannot replace a newer history', () => {
 });
 
 test('a repaint retires a live deliberation the paint no longer lists (#35)', () => {
-  // The close happened while this page could not hear it — feed down, or a
-  // room switched away from. The closing event sits *behind* the repaint's
-  // seq, so replay is rejected as already-folded; the paint's silence is the
-  // only messenger, and it must be believed or the ballot is offered forever.
-  const opened = apply(painted(), event(11, 'deliberation_opened', {
-    deliberationId: 'd1', deliberation: DELIBERATION, by: 'codex:api',
-  }, 'r1'));
+  // The close happened while this page could not hear it, and the closing
+  // event sits *behind* the repaint's seq — replay is rejected as already-
+  // folded. The paint's silence is the only messenger; believe it.
+  const opened = apply(painted(), event(11, 'deliberation_opened', { deliberationId: 'd1', deliberation: DELIBERATION, by: 'codex:api' }, 'r1'));
   assert.equal(liveDeliberations(opened, 'r1').length, 1);
 
   const repainted = seed(opened, { seq: 20, room: 'protocol', deliberations: [] });

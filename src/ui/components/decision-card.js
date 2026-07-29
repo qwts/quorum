@@ -23,8 +23,8 @@ import { QuorumElement, define, h } from '../lib/element.js';
 export class DecisionCard extends QuorumElement {
   static props = ['recordId', 'question', 'outcome', 'result', 'failureKind', 'decidedAt', 'room', 'decisionRule', 'reason', 'summary', 'variant', 'openable'];
 
-  /** `options: [{option, count, voters?}]`, `silent: string[]`, `dissents: [{name, harness?, note}]`. */
-  static data = ['options', 'silent', 'dissents'];
+  /** `options: [{option, count, voters?}]`, `silent: string[]`, `dissents: [{name, harness?, note}]`, `challengeRefs: (string|number)[]`. */
+  static data = ['options', 'silent', 'dissents', 'challengeRefs'];
 
   static styles = `
     :host {
@@ -169,6 +169,12 @@ export class DecisionCard extends QuorumElement {
         { class: 'foot' },
         this.attr('room') && h('span', {}, `#${this.attr('room')}`),
         this.attr('decision-rule') && h('span', {}, `rule: ${this.attr('decision-rule')}`),
+        // The challenges the record cites, by message seq (D4): the record
+        // references messages, never copies them. Full records only — a
+        // summary row is a headline, not a citation trail.
+        !summary && this.list('challengeRefs').length
+          ? h('span', {}, `challenges cited: seq ${this.list('challengeRefs').join(' · ')}`)
+          : null,
         h('span', {}, 'immutable'),
       ),
     );
