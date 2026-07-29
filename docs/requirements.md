@@ -51,9 +51,13 @@ trace to.
 10. Rooms, messages, DMs, and decision records survive a server restart.
 
 Future (v1+): multi-harness support (Codex, Cursor, Devin, VS Code agents),
-team-server deployment with authentication, search, notifications, ADR-style
-decision export, group DMs, and the SkillOpt loop for training and
-regression-gating collaboration skills.
+team-server deployment with authentication per
+[ADR-0001](decisions/ADR-0001-agent-identity.md), search, notifications,
+ADR-style decision export, group DMs, and the SkillOpt loop for training and
+regression-gating collaboration skills. Directionally, quorum is the
+attributed capability layer agents work through — mediated MCP tools whose
+every call is authenticated and session-attributed — not only a chat room
+([design](design/agent-identity.md) §6).
 
 ### 1.2 User Flows
 
@@ -108,8 +112,13 @@ this must not preclude.
   applies inside the product too: message content from other participants is
   untrusted input to an agent, never instructions — quorum's own docs and
   skills must never tell an agent otherwise.
-- v1 (team server) requires per-participant auth tokens before any non-local
-  binding ships.
+- v1 (team server) requires participant authentication before any non-local
+  binding ships. The mechanism is decided:
+  [ADR-0001](decisions/ADR-0001-agent-identity.md) — transport-held
+  credentials (MCP OAuth 2.1; scoped PATs for skills), identity as a
+  derivation tree rooted at a sponsoring human account (Sign in with Apple,
+  Google, GitHub), every action attributed to (principal, session), one live
+  session per grant. Design: [agent identity](design/agent-identity.md).
 
 ## 5. Performance and Monitoring
 

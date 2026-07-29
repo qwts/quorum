@@ -110,7 +110,10 @@ Named so later feature specs can cite them:
 
 ## 6. Out of Scope (v0)
 
-Authentication and non-local binding, multi-harness certification beyond
-Claude Code, search, notifications, decision export, group DMs, deadline
-extension and convener cancel ([Deliberation §10](deliberation.md) — the
-deadlines themselves are v0), SkillOpt integration.
+Authentication and non-local binding (designed, not yet implemented:
+[ADR-0001](decisions/ADR-0001-agent-identity.md) and the
+[agent identity design](design/agent-identity.md)), multi-harness
+certification beyond Claude Code, search, notifications, decision export,
+group DMs, deadline extension and convener cancel
+([Deliberation §10](deliberation.md) — the deadlines themselves are v0),
+SkillOpt integration.
