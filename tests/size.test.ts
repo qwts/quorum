@@ -40,9 +40,13 @@ const RATCHET = 40;
  * decision someone can disagree with in review, which is the point.
  */
 const EXCEPTIONS: Record<string, { limit: number; why: string }> = {
+  'src/domain/command-set.ts': {
+    limit: 285,
+    why: 'The command registry (#52): one entry per command is the design — adding a command touches only this file — so it grows with the vocabulary. Split when a category earns its own file, not before.',
+  },
   'src/domain/quorum.ts': {
-    limit: 735,
-    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany. Grew the audience filter (#42), then participant status and the command composition (#52) — the chat write path must close over the same api it dispatches to.',
+    limit: 760,
+    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany. Grew the audience filter (#42), then participant status and the command composition (#52), then the occupants read (#56) — the chat write path must close over the same api it dispatches to.',
   },
   'src/domain/deliberation.ts': {
     limit: 570,

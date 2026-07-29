@@ -145,8 +145,10 @@ export function rosterView(state, atMs) {
  * @param {import('./store.js').State} state
  * @param {string} openRoom
  * @param {(name: string) => void} onPick
+ * @param {{me: {id: string}|null, isOpen: (roomId: string) => boolean, onToggle: (roomId: string) => void}} [occupants]
+ *        the #56 disclosure: who is asking, and their per-room open/closed choice
  */
-export function sidebarView(state, openRoom, onPick) {
+export function sidebarView(state, openRoom, onPick, occupants) {
   const rooms = [...state.rooms.values()].sort((a, b) => a.name.localeCompare(b.name));
   const list = h('nav', { class: 'rooms', 'aria-label': 'rooms' });
   for (const room of rooms) {
@@ -166,6 +168,37 @@ export function sidebarView(state, openRoom, onPick) {
         room.decisionRule === 'unanimity' && h('span', { class: 'rule-tag' }, 'UNAN'),
       ),
     );
+    // Occupants under the room name (#56): the open room's members, shown to
+    // a viewer who has joined it, collapsible to preserve space. Membership
+    // is the id list; the count never disagrees with it by construction.
+    const ids = Array.isArray(room.memberIds) ? room.memberIds : [];
+    const joined = occupants?.me && ids.includes(occupants.me.id);
+    if (room.name === openRoom && joined) {
+      const open = occupants.isOpen(room.id);
+      list.append(
+        h(
+          'button',
+          { type: 'button', class: 'occupants-toggle quiet', 'aria-expanded': String(open), onclick: () => occupants.onToggle(room.id) },
+          `${open ? '▾' : '▸'} occupants · ${ids.length}`,
+        ),
+      );
+      if (open) {
+        for (const id of ids) {
+          const person = participant(state, id);
+          list.append(
+            h(
+              'div',
+              { class: 'occupant' },
+              h('span', {}, person?.name ?? 'unknown'),
+              person && person.harness !== 'human' ? h('span', { class: 'quiet' }, ` ${person.harness}`) : null,
+              person?.status
+                ? h('span', { class: 'quiet' }, ` — ${person.status.kind === 'blocked' ? 'blocked: ' : ''}${person.status.text}`)
+                : null,
+            ),
+          );
+        }
+      }
+    }
   }
   return list;
 }

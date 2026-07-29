@@ -192,6 +192,27 @@ test('/version answers to the asker alone and treats offline as a normal answer'
   }
 });
 
+test('/who lists the room in join order with statuses, and leaves no trace (#56)', async () => {
+  const { quorum, chris, fable } = setup();
+  await quorum.post({ room: 'protocol', participantId: fable.id, body: '/blocked waiting on review' });
+
+  const before = quorum.latestSeq();
+  const { message, command } = await quorum.post({ room: 'protocol', participantId: chris.id, body: '/who' });
+  assert.equal(message, undefined);
+  assert.equal(quorum.latestSeq(), before, 'asking who is here is not a room fact');
+  const lines = command!.text.split('\n');
+  assert.equal(lines[0], '#protocol · 2 members:');
+  assert.equal(lines[1], 'chris (human)', 'join order: the creator joined first');
+  assert.equal(lines[2], 'fable (claude-code) — BLOCKED: waiting on review', 'statuses ride along');
+
+  // The domain query underneath agrees, and a kick shrinks it.
+  await quorum.post({ room: 'protocol', participantId: chris.id, body: '/kick fable' });
+  assert.deepEqual(quorum.listMembers({ room: 'protocol' }).map((p) => p.name), ['chris']);
+  const rooms = quorum.listRooms().find((r) => r.name === 'protocol');
+  assert.deepEqual(rooms?.memberIds, [chris.id], 'the rooms read carries member ids for first paint');
+  assert.equal(rooms?.members, 1, 'the count is the list, derived');
+});
+
 test('an action command from a non-member is the same refusal as posting', async () => {
   const { quorum } = setup();
   const outsider = quorum.identify({ name: 'codex', harness: 'codex' }).participant;

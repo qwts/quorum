@@ -442,10 +442,13 @@ export function openQuorum(options: QuorumOptions = {}) {
       return room;
     },
 
-    listRooms(): (Room & { members: number })[] {
+    listRooms(): (Room & { members: number; memberIds: string[] })[] {
+      // Member ids ride along (#56) so one read paints occupants everywhere;
+      // the count is derived from the list, never tracked beside it.
       const rows = db
         .prepare(
-          `SELECT r.*, (SELECT COUNT(*) FROM room_members m WHERE m.room_id = r.id) AS members
+          `SELECT r.*, (SELECT json_group_array(participant_id) FROM
+             (SELECT participant_id FROM room_members m WHERE m.room_id = r.id ORDER BY m.joined_at)) AS member_ids
            FROM rooms r ORDER BY r.created_at`,
         )
         .all() as {
@@ -454,16 +457,33 @@ export function openQuorum(options: QuorumOptions = {}) {
         topic: string | null;
         decision_rule: string;
         created_by: string;
-        members: number;
+        member_ids: string;
       }[];
-      return rows.map((row) => ({
-        id: row.id,
-        name: row.name,
-        topic: row.topic,
-        decisionRule: row.decision_rule as DecisionRule,
-        createdBy: row.created_by,
-        members: row.members,
-      }));
+      return rows.map((row) => {
+        const memberIds = JSON.parse(row.member_ids) as string[];
+        return {
+          id: row.id,
+          name: row.name,
+          topic: row.topic,
+          decisionRule: row.decision_rule as DecisionRule,
+          createdBy: row.created_by,
+          members: memberIds.length,
+          memberIds,
+        };
+      });
+    },
+
+    // Who is in a room, in join order (#56): the /who command and the
+    // occupants panel ask this one question.
+    listMembers(input: { room: string }): Participant[] {
+      const room = requireRoom(input.room);
+      const rows = db
+        .prepare(
+          `SELECT p.* FROM participants p JOIN room_members m ON m.participant_id = p.id
+           WHERE m.room_id = ? ORDER BY m.joined_at`,
+        )
+        .all(room.id) as ParticipantRow[];
+      return rows.map(toParticipant);
     },
 
     joinRoom(input: { room: string; participantId: string }): Room {
@@ -723,6 +743,7 @@ export function openQuorum(options: QuorumOptions = {}) {
     resolveParticipant: participantResolver(db, requireParticipant),
     createRoom: (input) => api.createRoom(input),
     listRooms: () => api.listRooms(),
+    listMembers: (input) => api.listMembers(input),
     postMessage: (input) => api.postMessage(input),
   });
 

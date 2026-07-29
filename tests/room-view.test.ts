@@ -16,7 +16,7 @@ import { composerProps } from '../src/ui/kit/app/composer.js';
 import { recordProps } from '../src/ui/kit/app/record.js';
 import { isFresher, withRoomNames } from '../src/ui/kit/app/history.js';
 
-const ROOM = { id: 'r1', name: 'protocol', topic: 'the wire contract', decisionRule: 'majority', members: 2 };
+const ROOM = { id: 'r1', name: 'protocol', topic: 'the wire contract', decisionRule: 'majority', members: 2, memberIds: ['p1', 'p9'] };
 const CODEX = { id: 'p1', name: 'codex:api', harness: 'codex', repo: null, branch: null };
 const DANA = { id: 'p2', name: 'Dana', harness: 'human', repo: null, branch: null };
 

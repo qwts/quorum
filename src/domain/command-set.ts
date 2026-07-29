@@ -40,6 +40,7 @@ export type Deps = {
   resolveParticipant: (ref: string) => Participant;
   createRoom: (input: { name: string; topic?: string; by: string }) => Room;
   listRooms: () => (Room & { members: number })[];
+  listMembers: (input: { room: string }) => Participant[];
   postMessage: (input: { room: string; participantId: string; body: string; deliberationId?: string }) => Message;
 };
 
@@ -221,6 +222,22 @@ export function buildRegistry(deps: Deps): Command[] {
         db.prepare('DELETE FROM room_members WHERE room_id = ? AND participant_id = ?').run(where.id, target.id);
         appendEvent('participant_kicked', where.id, { room: where, participant: target, by: sender }, sender.id);
         return `Kicked ${target.name} from #${where.name}. They can rejoin unless banned (#54).`;
+      },
+    },
+    {
+      name: 'who',
+      category: 'rooms',
+      summary: 'who is in this room, in join order',
+      usage: '/who',
+      recorded: false,
+      run: ({ room }) => {
+        const where = room();
+        const members = deps.listMembers({ room: where.name });
+        const lines = members.map(
+          (p) =>
+            `${p.name} (${p.harness})${p.status ? ` — ${p.status.kind === 'blocked' ? 'BLOCKED: ' : ''}${p.status.text}` : ''}`,
+        );
+        return [`#${where.name} · ${members.length} member${members.length === 1 ? '' : 's'}:`, ...lines].join('\n');
       },
     },
     {
