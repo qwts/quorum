@@ -72,10 +72,9 @@ export const HANDLERS = {
   // way, so it is the same reducer.
   claim_expired: (state, { payload }) => drop(state, 'claims', payload.claim.id),
 
-  // A deliberation is folded from its events rather than fetched: the read API
-  // has no route for an open one, because the domain has no room-scoped query
-  // and that file is another lane's. A page opened mid-deliberation therefore
-  // sees it on the next event, not on first paint — tracked, not forgotten.
+  // A deliberation opened while the page is up is folded from this event; one
+  // already open at load arrives in the first paint instead (seed, #35).
+  // Either way the feed owns every change after.
   deliberation_opened: (state, { payload }) =>
     put(state, 'deliberations', payload.deliberationId, {
       ...payload.deliberation,

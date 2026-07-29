@@ -376,3 +376,34 @@ test('decision records are immutable, queryable, and survive a restart (1.1 #6, 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('listOpenDeliberations answers "what is this room deciding right now", D6-safely (#35)', () => {
+  const quorum = openQuorum();
+  const { members, room, deliberation } = convened(quorum, ['ada', 'grace']);
+  const [ada, grace] = members;
+
+  // A second live deliberation in the same room, and one in another room that
+  // must not bleed in — the query is room-scoped or it is useless for paint.
+  const second = quorum.propose({ participantId: ada!.id, room: room.id, question: 'and this?', options: ['yes', 'no'] });
+  const elsewhere = quorum.createRoom({ name: 'elsewhere', by: ada!.id });
+  quorum.propose({ participantId: ada!.id, room: elsewhere.id, question: 'unrelated', options: ['a', 'b'] });
+
+  const open = quorum.listOpenDeliberations({ room: room.id });
+  assert.deepEqual(open.map((d) => d.id).sort(), [deliberation.id, second.id].sort());
+  assert.ok(open.every((d) => d.rule === 'majority'), 'the view carries the rule, same as getDeliberation');
+
+  // Mid-vote, the view says who has cast and never what: the paint a late
+  // page seeds from must not be the leak the feed was designed not to be.
+  quorum.closeChallenges({ participantId: ada!.id, deliberationId: deliberation.id });
+  quorum.vote({ participantId: grace!.id, deliberationId: deliberation.id, choice: 1, dissent: 'reluctantly' });
+  const voting = quorum.listOpenDeliberations({ room: room.id }).find((d) => d.id === deliberation.id);
+  assert.equal(voting?.phase, 'voting');
+  assert.deepEqual(voting?.cast, [grace!.id]);
+  assert.ok(!JSON.stringify(voting).includes('"choice"'), 'no choice in the open view');
+  assert.ok(!JSON.stringify(voting).includes('reluctantly'), 'no dissent either');
+
+  // Closed deliberations leave the answer — they are the record's business.
+  quorum.vote({ participantId: ada!.id, deliberationId: deliberation.id, choice: 1 });
+  const remaining = quorum.listOpenDeliberations({ room: 'room-ada-grace' }); // by name, like every room argument
+  assert.deepEqual(remaining.map((d) => d.id), [second.id]);
+});

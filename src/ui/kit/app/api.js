@@ -55,6 +55,7 @@ export const api = {
   decisions: (/** @type {string|undefined} */ room) => read(`/api/decisions${room ? `?room=${encodeURIComponent(room)}` : ''}`),
   decision: (/** @type {string} */ deliberationId) => read(`/api/decisions/${encodeURIComponent(deliberationId)}`),
   messages: (/** @type {string} */ room) => read(`/api/rooms/${encodeURIComponent(room)}/messages`),
+  deliberations: (/** @type {string} */ room) => read(`/api/rooms/${encodeURIComponent(room)}/deliberations`),
 
   identify: (/** @type {string} */ name) => write('/api/identify', { name }),
   join: (/** @type {string} */ room, /** @type {string} */ participantId) =>
@@ -77,17 +78,19 @@ export const api = {
  * @param {string} room
  */
 export async function paintRoom(room) {
-  const [rooms, participants, claims, messages] = await Promise.all([
+  const [rooms, participants, claims, messages, deliberations] = await Promise.all([
     api.rooms(),
     api.participants(),
     api.claims(),
     api.messages(room),
+    api.deliberations(room),
   ]);
   return {
-    seq: Math.min(rooms.seq, participants.seq, claims.seq, messages.seq),
+    seq: Math.min(rooms.seq, participants.seq, claims.seq, messages.seq, deliberations.seq),
     rooms: rooms.rooms,
     participants: participants.participants,
     claims: claims.claims,
     messages: messages.messages,
+    deliberations: deliberations.deliberations,
   };
 }
