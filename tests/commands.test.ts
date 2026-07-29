@@ -213,6 +213,31 @@ test('/who lists the room in join order with statuses, and leaves no trace (#56)
   assert.equal(rooms?.members, 1, 'the count is the list, derived');
 });
 
+test('membership order is insertion-stable through clock ties and kick/rejoin (#58 review)', async () => {
+  // Everything in this test lands in the same millisecond as far as the
+  // clock cares — the ordering must come from insertion, not the timestamp,
+  // or the database may answer either way (Sol's P1 on #58).
+  const { quorum, chris, fable } = setup();
+  const sol = quorum.identify({ name: 'sol', harness: 'codex' }).participant;
+  quorum.joinRoom({ room: 'protocol', participantId: sol.id });
+
+  const paint = () => quorum.listRooms().find((r) => r.name === 'protocol')!.memberIds;
+  const who = async () =>
+    (await quorum.post({ room: 'protocol', participantId: chris.id, body: '/who' })).command!.text
+      .split('\n')
+      .slice(1)
+      .map((line) => line.split(' ')[0]);
+
+  assert.deepEqual(paint(), [chris.id, fable.id, sol.id], 'join order, stable');
+  assert.deepEqual(await who(), ['chris', 'fable', 'sol'], 'first paint and /who agree — one query path');
+
+  // A kick removes; a rejoin goes to the end. Both surfaces keep agreeing.
+  await quorum.post({ room: 'protocol', participantId: chris.id, body: '/kick fable' });
+  quorum.joinRoom({ room: 'protocol', participantId: fable.id });
+  assert.deepEqual(paint(), [chris.id, sol.id, fable.id], 'rejoining is joining: the end of the line');
+  assert.deepEqual(await who(), ['chris', 'sol', 'fable']);
+});
+
 test('an action command from a non-member is the same refusal as posting', async () => {
   const { quorum } = setup();
   const outsider = quorum.identify({ name: 'codex', harness: 'codex' }).participant;

@@ -187,6 +187,18 @@ export function openQuorum(options: QuorumOptions = {}) {
     return toParticipant(row);
   }
 
+  // The one membership ordering (#56): join order, made insertion-stable by
+  // rowid — two joins can share a millisecond, and an ordering that ties on
+  // the clock alone is one the database may answer either way. Every surface
+  // that says who is in a room reads through here; review caught the drift
+  // when there were briefly two of these.
+  function memberIdsOf(roomId: string): string[] {
+    const rows = db
+      .prepare('SELECT participant_id FROM room_members WHERE room_id = ? ORDER BY joined_at, rowid')
+      .all(roomId) as { participant_id: string }[];
+    return rows.map((row) => row.participant_id);
+  }
+
   function isMember(roomId: string, participantId: string): boolean {
     return (
       db.prepare('SELECT 1 FROM room_members WHERE room_id = ? AND participant_id = ?').get(roomId, participantId) !==
@@ -444,23 +456,18 @@ export function openQuorum(options: QuorumOptions = {}) {
 
     listRooms(): (Room & { members: number; memberIds: string[] })[] {
       // Member ids ride along (#56) so one read paints occupants everywhere;
-      // the count is derived from the list, never tracked beside it.
-      const rows = db
-        .prepare(
-          `SELECT r.*, (SELECT json_group_array(participant_id) FROM
-             (SELECT participant_id FROM room_members m WHERE m.room_id = r.id ORDER BY m.joined_at)) AS member_ids
-           FROM rooms r ORDER BY r.created_at`,
-        )
-        .all() as {
+      // the count is derived from the list, never tracked beside it, and the
+      // list comes from the one membership query below (issue requirement 3 —
+      // a second SQL path is where the ordering drifted in review).
+      const rows = db.prepare('SELECT * FROM rooms ORDER BY created_at').all() as {
         id: string;
         name: string;
         topic: string | null;
         decision_rule: string;
         created_by: string;
-        member_ids: string;
       }[];
       return rows.map((row) => {
-        const memberIds = JSON.parse(row.member_ids) as string[];
+        const memberIds = memberIdsOf(row.id);
         return {
           id: row.id,
           name: row.name,
@@ -474,16 +481,9 @@ export function openQuorum(options: QuorumOptions = {}) {
     },
 
     // Who is in a room, in join order (#56): the /who command and the
-    // occupants panel ask this one question.
+    // occupants panel ask this one question, through the one query.
     listMembers(input: { room: string }): Participant[] {
-      const room = requireRoom(input.room);
-      const rows = db
-        .prepare(
-          `SELECT p.* FROM participants p JOIN room_members m ON m.participant_id = p.id
-           WHERE m.room_id = ? ORDER BY m.joined_at`,
-        )
-        .all(room.id) as ParticipantRow[];
-      return rows.map(toParticipant);
+      return memberIdsOf(requireRoom(input.room).id).map(requireParticipant);
     },
 
     joinRoom(input: { room: string; participantId: string }): Room {
