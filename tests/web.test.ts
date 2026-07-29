@@ -291,3 +291,26 @@ test('a DM crosses the wire only inside its pair — stream, reads, and writes (
     ['rotate the deploy key tonight', 'done — key rotated'],
   );
 });
+
+test('an explicit after=0 on the DM route reads forward from the beginning, not the tail', async () => {
+  quorum.identify({ name: 'walker', harness: 'human' });
+  const walker = quorum.listParticipants().find((p) => p.name === 'walker')!;
+  for (let i = 1; i <= 4; i += 1) {
+    quorum.sendDm({ participantId: walker.id, to: codex.id, body: `walk ${i}` });
+  }
+
+  // Presence decides the path: after=0 is a cursor, and a client that
+  // initializes at zero must get the head of the thread, not skip it.
+  const fromZero = await get(`/api/dms?as=${walker.id}&with=${codex.id}&after=0&limit=2`);
+  assert.deepEqual(
+    fromZero.body.messages.map((m: any) => m.body),
+    ['walk 1', 'walk 2'],
+  );
+
+  // No parameter is still the first paint, which wants the tail.
+  const tail = await get(`/api/dms?as=${walker.id}&with=${codex.id}&limit=2`);
+  assert.deepEqual(
+    tail.body.messages.map((m: any) => m.body),
+    ['walk 3', 'walk 4'],
+  );
+});

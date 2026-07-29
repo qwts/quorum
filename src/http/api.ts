@@ -123,14 +123,19 @@ export function serveApi(req: IncomingMessage, res: ServerResponse, url: URL, qu
       const as = url.searchParams.get('as') ?? '';
       const counterpart = url.searchParams.get('with');
       if (counterpart) {
-        const after = positiveInt(url.searchParams.get('after'), 0) || undefined;
+        // Presence decides the path, not the value: `after=0` is an explicit
+        // cursor — "from the beginning" — and must read forward, or a client
+        // that initializes its cursor at zero silently skips the head of the
+        // thread. Only an *absent* parameter means first paint.
+        const rawAfter = url.searchParams.get('after');
+        const after = rawAfter === null ? undefined : positiveInt(rawAfter, 0);
         const limit = positiveInt(url.searchParams.get('limit'), 100);
         // Same shape as the room messages route: with `after` the caller is
         // walking forward; without it this is a first paint and wants the
         // tail of the thread, not its beginning (see recentMessages).
         let thread = null;
         let messages: unknown[] = [];
-        if (after) {
+        if (after !== undefined) {
           ({ messages, thread } = quorum.readDms({ participantId: as, with: counterpart, afterId: after, limit }));
         } else {
           const page = Math.max(limit, 200);
