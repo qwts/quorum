@@ -8,6 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { SCHEMA } from './schema.ts';
 import { normalizePatterns, PatternError, scopesOverlap } from './glob.ts';
+import { openCommandGuidance } from './command-guidance.ts';
 import { openCommands } from './commands.ts';
 import { openDeliberations } from './deliberation.ts';
 import { openDms, participantResolver } from './dm.ts';
@@ -75,6 +76,12 @@ export type ClaimGrant = { ok: true; claim: Claim } | { ok: false; conflicts: Cl
 export type QuorumOptions = {
   path?: string;
   now?: () => number;
+  /**
+   * Where deployment-authored command prompt files live (#51). Defaults to
+   * QUORUM_COMMANDS_DIR, then ~/.quorum/commands; the built-in defaults in
+   * the repository's commands/ directory always back it.
+   */
+  commandsDir?: string;
 };
 
 const DEFAULT_TTL_SECONDS = 30 * 60;
@@ -763,8 +770,38 @@ export function openQuorum(options: QuorumOptions = {}) {
     postMessage: (input) => api.postMessage(input),
   });
 
+  // Delivery-time slash commands (#51). The executed registry's names are
+  // reserved so the two mechanisms cannot collide — the coexistence rule
+  // itself is documented in command-guidance.ts.
+  const deliveryCommands = openCommandGuidance({ reserved: commands.names, deploymentDir: options.commandsDir });
+
   // The chat write path: commands execute (#52), everything else posts.
-  return { ...api, post: commands.post.bind(commands) };
+  return {
+    ...api,
+    post: commands.post.bind(commands),
+
+    // The guidance one recipient's delivery of a message carries (#51), or
+    // null when it carries none. Derived at read time from the registry —
+    // never stored (req 7), so the events above stay pure facts. Domain-side
+    // so both transports could ask; only the MCP transport renders the
+    // footer, because guidance is agent-facing — the web UI keeps showing
+    // the plain message.
+    deliveryGuidance(input: {
+      body: string;
+      from: string;
+      room: string | null;
+      recipientId: string;
+      quote: (text: string, max?: number) => string;
+    }): string | null {
+      return deliveryCommands.guidanceFor({
+        body: input.body,
+        from: input.from,
+        room: input.room,
+        quote: input.quote,
+        recipient: requireParticipant(input.recipientId),
+      });
+    },
+  };
 }
 
 export type Quorum = ReturnType<typeof openQuorum>;

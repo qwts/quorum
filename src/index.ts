@@ -9,6 +9,10 @@
 //             that v1 brings, not a flag)
 // QUORUM_HOSTS extra hostnames the browser write guard accepts, comma
 //             separated. A name is never inferred from the request.
+// QUORUM_COMMANDS_DIR
+//             deployment-authored command prompt files for delivery-time
+//             slash commands (#51). Default ~/.quorum/commands; the built-in
+//             defaults in this repository's commands/ directory back it.
 // QUORUM_TLS_CERT / QUORUM_TLS_KEY / QUORUM_TLS_PASSPHRASE_FILE
 //             optional TLS, for reaching this server by a hostname. Loopback
 //             is already a secure context and needs none of it.
