@@ -41,8 +41,8 @@ const RATCHET = 40;
  */
 const EXCEPTIONS: Record<string, { limit: number; why: string }> = {
   'src/domain/quorum.ts': {
-    limit: 715,
-    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany. Grew the audience filter (#42), which must sit on the one path every feed read shares.',
+    limit: 735,
+    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany. Grew the audience filter (#42), then participant status and the command composition (#52) — the chat write path must close over the same api it dispatches to.',
   },
   'src/domain/deliberation.ts': {
     limit: 570,

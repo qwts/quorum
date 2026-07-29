@@ -89,6 +89,18 @@ export function rosterView(state, atMs) {
         branch: person.branch,
       }),
     );
+    // Advisory presence (#52 /status, /blocked) — a quiet line under the
+    // chip. A designed treatment is Q15 in QUESTIONS.md; until then this
+    // arranges existing text styles rather than inventing a visual.
+    if (person.status) {
+      chips.append(
+        h(
+          'div',
+          { class: 'quiet' },
+          person.status.kind === 'blocked' ? `blocked: ${person.status.text}` : person.status.text,
+        ),
+      );
+    }
   }
   roster.append(chips);
 

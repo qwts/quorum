@@ -16,7 +16,13 @@ CREATE TABLE IF NOT EXISTS participants (
   -- How far this participant has consumed the feed. Owned by the participant
   -- rather than the connection, so a reconnect resumes instead of skipping
   -- (issue #11). Advances only when events are handed over.
-  cursor       INTEGER NOT NULL DEFAULT 0
+  cursor       INTEGER NOT NULL DEFAULT 0,
+  -- Advisory presence (#52 /status, #17): what this participant says it is
+  -- doing. Never load-bearing for the protocol — a deliberation must not wait
+  -- on anyone's status. kind is 'status' | 'blocked'.
+  status       TEXT,
+  status_kind  TEXT,
+  status_at    INTEGER
 );
 
 -- Identity is the pair an agent introduces itself with, so a reconnecting

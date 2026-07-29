@@ -442,11 +442,21 @@ export async function callTool(
 
     case 'post_message': {
       const participantId = requireIdentity(session);
-      const message = quorum.postMessage({
+      // The domain's chat path: a body that is a room command (#52) executes
+      // instead of posting, and the reply carries its answer.
+      const { message, command } = await quorum.post({
         room: str(args, 'room') ?? '',
         participantId,
         body: str(args, 'body') ?? '',
       });
+      if (command) {
+        return {
+          guidance: command.recorded
+            ? `${command.text}\n\n(The /${command.command} line itself is on the room's record.)`
+            : `${command.text}\n\n(Answered to you alone — nothing was posted.)`,
+          data: message ? { message } : {},
+        };
+      }
       return {
         guidance:
           `Posted. Others are woken by it.` +

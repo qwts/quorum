@@ -254,3 +254,17 @@ asked for a name once`.
   partial on exactly this line.
 - **Blocking?** no for alpha; **yes for the acceptance walk (#21)**, which
   traces 1.1 #9 in full.
+
+### Q15 — Roster presence lines (/status, /blocked) have no designed treatment
+
+- **Where:** the room screen roster; #52 gives participants an advisory
+  status ("what I am doing") and a blocked state ("stuck, and on what").
+- **What I needed:** a designed way to show a short status line beside a
+  roster identity, and a visually distinct treatment for blocked — the
+  design system ships `q-identity-chip` with no status affordance and no
+  blocked variant.
+- **What I did instead:** a `.quiet` text line under the chip, prefixed
+  `blocked:` for the blocked kind — existing styles arranged, no new
+  visual invented.
+- **Blocking?** no; the data flows and the words are on screen. A designed
+  treatment (and whether blocked deserves color) is a design-lane call.

@@ -105,7 +105,7 @@ export async function serveWrites(
 
   try {
     const body = await readJson(req);
-    const result = dispatch(route, body, quorum);
+    const result = await dispatch(route, body, quorum);
     if (!result) {
       send(res, 404, { error: `no such route: ${route}` });
       return true;
@@ -128,11 +128,11 @@ export async function serveWrites(
 }
 
 /** The routes themselves. Returns null when nothing matched. */
-function dispatch(
+async function dispatch(
   route: string,
   body: Record<string, unknown>,
   quorum: Quorum,
-): Record<string, unknown> | null {
+): Promise<Record<string, unknown> | null> {
   // A browser names itself once and keeps the id. `identify` is idempotent on
   // (name, harness), so a reload rejoins the same participant rather than
   // minting a second one with the same name.
@@ -153,14 +153,15 @@ function dispatch(
 
   const post = /^rooms\/([^/]+)\/messages$/.exec(route);
   if (post) {
-    return {
-      message: quorum.postMessage({
-        room: segment(post[1]!),
-        participantId: str(body, 'participantId'),
-        body: str(body, 'body'),
-        deliberationId: typeof body.deliberationId === 'string' ? body.deliberationId : undefined,
-      }),
-    };
+    // The domain's chat path: a body that is a room command (#52) executes
+    // instead of posting, and `command` carries the answer for this sender
+    // alone — the composer shows it locally, never as a room message.
+    return await quorum.post({
+      room: segment(post[1]!),
+      participantId: str(body, 'participantId'),
+      body: str(body, 'body'),
+      deliberationId: typeof body.deliberationId === 'string' ? body.deliberationId : undefined,
+    });
   }
 
   // A human sends a DM (#42). Same domain call the send_dm tool makes, so the

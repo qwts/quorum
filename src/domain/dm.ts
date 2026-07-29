@@ -56,14 +56,14 @@ export type Deps = {
 type ThreadRow = { id: string; low_id: string; high_id: string; created_at: number };
 type MessageRow = { id: number; thread_id: string; participant_id: string; body: string; created_at: number };
 
-export function openDms(deps: Deps) {
-  const { db, now, appendEvent, requireParticipant } = deps;
-
-  // A participant by id, or by name when exactly one participant has it.
-  // Identity is (name, harness), so two harnesses can share a name; an
-  // ambiguous name is refused rather than guessed — a DM sent to the wrong
-  // one of two participants is not an error the sender can see.
-  function resolveParticipant(ref: string): Participant {
+// A participant by id, or by name when exactly one participant has it.
+// Identity is (name, harness), so two harnesses can share a name; an
+// ambiguous name is refused rather than guessed — a DM sent to the wrong
+// one of two participants is not an error the sender can see. Exported as a
+// factory because commands (#52) resolve /invite and /kick targets by the
+// same rule — one answer to "who is that", not two.
+export function participantResolver(db: DatabaseSync, requireParticipant: (id: string) => Participant) {
+  return function resolveParticipant(ref: string): Participant {
     const trimmed = ref?.trim();
     if (!trimmed) throw new QuorumError('say who — a participant id or name');
     const byId = db.prepare('SELECT id FROM participants WHERE id = ?').get(trimmed) as { id: string } | undefined;
@@ -78,7 +78,13 @@ export function openDms(deps: Deps) {
       );
     }
     throw new QuorumError(`unknown participant: ${JSON.stringify(trimmed)}`);
-  }
+  };
+}
+
+export function openDms(deps: Deps) {
+  const { db, now, appendEvent, requireParticipant } = deps;
+
+  const resolveParticipant = participantResolver(db, requireParticipant);
 
   function toThread(row: ThreadRow): DmThread {
     return { id: row.id, participants: [row.low_id, row.high_id], createdAt: row.created_at };
