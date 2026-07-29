@@ -160,7 +160,11 @@ export function buildRegistry(deps: Deps): Command[] {
       category: 'rooms',
       summary: 'create a room: /room <name> [topic]',
       usage: '/room <name> [topic]',
-      recorded: true,
+      // Answer-class on purpose: creation announces itself (room_created),
+      // and an action gate would demand membership in the room you typed in —
+      // which on a fresh server does not exist. /list says "/room creates
+      // one", and that has to be true with zero rooms (#55 review).
+      recorded: false,
       run: ({ sender, args }) => {
         const [name, ...rest] = args.split(/\s+/);
         if (!name) throw new QuorumError('a room needs a name: /room <name> [topic]');

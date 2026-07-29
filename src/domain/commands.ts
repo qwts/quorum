@@ -58,7 +58,11 @@ export function openCommands(deps: Deps) {
       message?: Message;
       command?: CommandOutcome;
     }> {
-      const command = await this.dispatch(input);
+      // A challenge is an argument, not an order: a deliberation-tagged body
+      // never dispatches as a command, so no action can run before the tag's
+      // phase gate has its say in postMessage — a closed challenge window
+      // must refuse the whole post, not half of it.
+      const command = input.deliberationId ? null : await this.dispatch(input);
       if (!command) return { message: deps.postMessage(input) };
       if (command.recorded) return { message: deps.postMessage(input), command };
       return { command };

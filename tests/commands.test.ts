@@ -80,7 +80,7 @@ test('/blocked is a status with teeth, and refuses without a reason', async () =
   assert.match(ask.command!.text, /BLOCKED: waiting on review/);
 });
 
-test('/room creates the room from chat, with the order on the record', async () => {
+test('/room creates the room from chat and needs no room to exist first', async () => {
   const { quorum, chris } = setup();
   const { message, command } = await quorum.post({
     room: 'protocol',
@@ -88,8 +88,35 @@ test('/room creates the room from chat, with the order on the record', async () 
     body: '/room design the look of things',
   });
   assert.match(command!.text, /Room #design created/);
-  assert.equal(message?.body, '/room design the look of things');
+  assert.equal(message, undefined, 'creation announces itself (room_created); no chat line is posted');
   assert.ok(quorum.listRooms().some((r) => r.name === 'design' && r.topic === 'the look of things'));
+
+  // The bootstrap path /list advertises: a fresh server, zero rooms, and
+  // /room still works — the room named in the request does not have to exist.
+  const fresh = openQuorum();
+  const solo = fresh.identify({ name: 'solo', harness: 'test' }).participant;
+  const made = await fresh.post({ room: 'protocol', participantId: solo.id, body: '/room protocol first light' });
+  assert.match(made.command!.text, /Room #protocol created/);
+  assert.equal(fresh.listRooms()[0]?.name, 'protocol');
+});
+
+test('a challenge-tagged body is never a command — the phase gate speaks first', async () => {
+  const { quorum, chris, fable } = setup();
+  const deliberation = quorum.propose({
+    room: 'protocol',
+    participantId: chris.id,
+    question: 'ship it?',
+    options: ['yes', 'no'],
+  });
+  const tagged = await quorum.post({
+    room: 'protocol',
+    participantId: fable.id,
+    body: '/status busy',
+    deliberationId: deliberation.id,
+  });
+  assert.equal(tagged.command, undefined, 'the tag wins: this is a challenge, not an order');
+  assert.equal(tagged.message?.body, '/status busy');
+  assert.equal(quorum.listParticipants().find((p) => p.id === fable.id)?.status, null, 'no action ran');
 });
 
 test('/invite wakes the invitee alone; the room sees only the typed line', async () => {

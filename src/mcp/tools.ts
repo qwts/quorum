@@ -8,7 +8,7 @@
 import type { Claim, Quorum } from '../domain/quorum.ts';
 import { QuorumError } from '../domain/quorum.ts';
 import { callDmTool, DM_TOOLS } from './dms.ts';
-import { num, quoted, requireIdentity, str, type Json, type Session, type ToolDefinition, type ToolReply } from './reply.ts';
+import { commandReply, num, quoted, requireIdentity, str, type Json, type Session, type ToolDefinition, type ToolReply } from './reply.ts';
 
 // The session, the reply shape, and the quoting discipline live in reply.ts,
 // shared with the DM surface in dms.ts. Re-exported so the server keeps one
@@ -449,14 +449,7 @@ export async function callTool(
         participantId,
         body: str(args, 'body') ?? '',
       });
-      if (command) {
-        return {
-          guidance: command.recorded
-            ? `${command.text}\n\n(The /${command.command} line itself is on the room's record.)`
-            : `${command.text}\n\n(Answered to you alone — nothing was posted.)`,
-          data: message ? { message } : {},
-        };
-      }
+      if (command) return commandReply(command, message);
       return {
         guidance:
           `Posted. Others are woken by it.` +

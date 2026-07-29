@@ -48,7 +48,15 @@ export function createSender(ports) {
     try {
       // Membership is the protocol's rule, not this screen's; joining is
       // idempotent, so asking every time is cheaper than tracking it wrongly.
-      await ports.join(room, who.id);
+      // A slash body is the one exception to join-or-fail: /room must work on
+      // a fresh server where the room in the URL does not exist yet (#52),
+      // and the domain gates commands itself — so the post gets its say, and
+      // a command that does need membership is refused in the domain's words.
+      try {
+        await ports.join(room, who.id);
+      } catch (error) {
+        if (!body.startsWith('/')) throw error;
+      }
       return await ports.post(room, who.id, body);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
