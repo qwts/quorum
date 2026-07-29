@@ -29,6 +29,13 @@ export function openCommands(deps: Deps) {
 
   return {
     /**
+     * The names this registry owns. The delivery-time registry (#51,
+     * command-guidance.ts) must never expand them: what executes at post
+     * keeps its #52 behavior, whatever prompt files a deployment adds.
+     */
+    names: registry.map((command) => command.name),
+
+    /**
      * Parse and run a command, or return null when the body is not one —
      * including an unknown /word, which posts as the message it is.
      */

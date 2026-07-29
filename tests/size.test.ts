@@ -45,16 +45,16 @@ const EXCEPTIONS: Record<string, { limit: number; why: string }> = {
     why: 'The command registry (#52): one entry per command is the design — adding a command touches only this file — so it grows with the vocabulary. Split when a category earns its own file, not before.',
   },
   'src/domain/quorum.ts': {
-    limit: 780,
-    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany. Grew the audience filter (#42), participant status and command composition (#52), the occupants read (#56), then the shared claim-refusal record (#15) — the chat write path must close over the same api it dispatches to.',
+    limit: 810,
+    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany. Grew the audience filter (#42), participant status and command composition (#52), the occupants read (#56), the shared claim-refusal record (#15), then delivery guidance (#51) — which must resolve recipients through the same requireParticipant.',
   },
   'src/domain/deliberation.ts': {
     limit: 570,
     why: 'The protocol state machine. Its phases only make sense read together; the seams it does have are documented in docs/deliberation.md §8.',
   },
   'src/mcp/tools.ts': {
-    limit: 750,
-    why: 'Hand-written JSON Schema, which is verbose by choice — the wire contract is the product (AGENTS.md), so it reads as the contract it is rather than being generated. Ratcheted down when the DM family moved to dms.ts (#42); grew list_open_deliberations (#35).',
+    limit: 770,
+    why: 'Hand-written JSON Schema, which is verbose by choice — the wire contract is the product (AGENTS.md), so it reads as the contract it is rather than being generated. Ratcheted down when the DM family moved to dms.ts (#42); grew list_open_deliberations (#35), then the delivery footers (#51).',
   },
 };
 
