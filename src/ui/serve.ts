@@ -47,12 +47,17 @@ export async function serveUi(req: IncomingMessage, res: ServerResponse, pathnam
     return true;
   }
 
-  // Redirect the bare root rather than serving the gallery from it: a page
-  // served at a path it does not live at resolves every relative href one
-  // directory too high, and silently — the stylesheet 404s and you get an
-  // unstyled page with no error anywhere.
+  // Redirect the bare root rather than serving a page from it: a page served
+  // at a path it does not live at resolves every relative href one directory
+  // too high, and silently — the stylesheet 404s and you get an unstyled page
+  // with no error anywhere.
+  //
+  // The root lands on the room view — the product's front door (#48). It
+  // pointed at the component gallery once, when the gallery was the only
+  // page; a person told to "open the UI" should meet the product, not its
+  // parts catalogue. The gallery keeps its URL at kit/components.html.
   if (pathname === UI_PATH || pathname === `${UI_PATH}/`) {
-    res.writeHead(302, { location: `${UI_PATH}/kit/components.html` });
+    res.writeHead(302, { location: `${UI_PATH}/kit/room.html` });
     res.end();
     return true;
   }

@@ -372,3 +372,9 @@ test('the convener closes challenges over the wire; anyone else is refused in th
   const { deliberation: after } = (await closed.json()) as any;
   assert.equal(after.phase, 'voting');
 });
+
+test('the UI front door is the room view, not the parts catalogue (#48)', async () => {
+  const response = await fetch(`${origin}/ui/`, { redirect: 'manual' });
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get('location'), '/ui/kit/room.html');
+});
