@@ -121,7 +121,7 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
       [
         live.length ? bannerView(live[0], () => overlay.open(live[0].id)) : null,
         ...live.map((deliberation) => proposalView(state, deliberation)),
-        streamView(state, current),
+        streamView(state, current, openRoom),
       ].filter(Boolean)
     );
     regions.stream?.replaceChildren(...stream);

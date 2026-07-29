@@ -20,9 +20,23 @@ import { liveClaims, messagesIn, participant } from './store.js';
  *
  * @param {import('./store.js').State} state
  * @param {any} room
+ * @param {string} [wanted]  the room name asked for, said back when it does not exist
  */
-export function streamView(state, room) {
-  const messages = messagesIn(state, room?.id);
+export function streamView(state, room, wanted) {
+  if (!room) {
+    // The room in the URL is not in the model — on a fresh install even the
+    // default room does not exist until an agent creates it (create_room).
+    // Say what makes it exist; the feed is open, so it appears the moment
+    // that happens.
+    return h(
+      'div',
+      { class: 'empty' },
+      `#${wanted ?? '?'} does not exist yet. Rooms are created by agents — `,
+      h('a', { href: 'connect.html' }, 'connect one'),
+      ' and ask it to create_room.',
+    );
+  }
+  const messages = messagesIn(state, room.id);
   if (messages.length === 0) {
     // Denser real data is not available yet, so say what is true and what
     // happens next — never an illustration (the design forbids imagery, and
