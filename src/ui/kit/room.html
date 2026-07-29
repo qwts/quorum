@@ -42,6 +42,12 @@
       .hash { color: var(--text-faint); }
       .rule-tag { margin-left: auto; font: var(--type-label); letter-spacing: var(--ls-caps); color: var(--text-faint); }
 
+      /* The other screens, reachable from here (§1.3 lists five). */
+      .screens { margin-top: auto; display: flex; flex-direction: column; padding: var(--sp-5) 0; border-top: var(--border-width) solid var(--line-1); }
+      .screen-link { display: block; padding: var(--sp-3) var(--sp-5); font: var(--type-body); color: var(--text-muted); border-bottom: none; }
+      .screen-link:hover { background: var(--surface-hover); color: var(--text-body); }
+      .screen-link.accent { color: var(--text-accent); font: var(--type-body-strong); }
+
       .topbar { display: flex; align-items: center; gap: var(--sp-4); width: 100%; }
       .topbar-room { font: var(--type-subheading); }
       .topbar-topic { font: var(--type-meta); color: var(--text-meta); }
@@ -64,6 +70,50 @@
       .claim-foot { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
       .empty { font: var(--type-body); color: var(--text-meta); padding: var(--sp-7); max-width: var(--measure-message); }
 
+      /* Room during deliberation (§1.3; design 0.4.0 StreamBanner): the chip
+         carries the open phase, the button is the one navigation the state
+         allows. The dot does not pulse — the motion tokens stop at
+         --dur-slow and a pulse period has no token (QUESTIONS.md Q13). */
+      .banner { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--sp-6); padding: var(--sp-4) var(--sp-7); background: var(--ink-800); border-bottom: var(--border-width) solid var(--line-2); }
+      .banner-chip { flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--sp-3); padding: var(--sp-1) var(--sp-4); border-radius: var(--radius-sm); border: var(--border-width) solid currentColor; font: var(--type-label); letter-spacing: var(--ls-caps); text-transform: uppercase; white-space: nowrap; }
+      .banner-dot { width: var(--sp-2); height: var(--sp-2); border-radius: var(--radius-pill); background: currentColor; }
+      .banner-copy { font: var(--type-mono); color: var(--text-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+      .banner-deadline { flex: 0 0 auto; font: var(--type-mono); white-space: nowrap; }
+      .banner-open { margin-left: auto; appearance: none; background: var(--brass-500); color: var(--fg-on-accent); border: none; border-radius: var(--radius-md); font: var(--type-mono-strong); padding: var(--sp-2) var(--sp-4); cursor: pointer; white-space: nowrap; transition: var(--transition-hover); }
+
+      /* The deliberation overlay (design 0.4.0 DeliberationOverlay). Sized by
+         inset rather than the mock's fixed pixels — the overlay's designed
+         width has no token (QUESTIONS.md Q13). */
+      .ov-scrim { position: fixed; inset: 0; z-index: 10; display: flex; align-items: stretch; justify-content: center; padding: var(--sp-8); background: var(--scrim); backdrop-filter: var(--blur-scrim); animation: q-arrive var(--dur-slow) var(--ease-out); }
+      .ov-panel { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--surface-app); border: var(--border-width) solid var(--line-2); border-top: var(--border-width-accent) solid var(--line-2); border-radius: var(--radius-lg); box-shadow: var(--shadow-overlay); }
+      .ov-head { flex: 0 0 auto; max-height: 55%; overflow-y: auto; padding: var(--sp-6) var(--sp-7); border-bottom: var(--border-width) solid var(--line-1); display: flex; flex-direction: column; gap: var(--sp-5); }
+      .ov-headrow { display: flex; align-items: center; gap: var(--sp-5); flex-wrap: wrap; }
+      .ov-right { margin-left: auto; }
+      .ov-pill { font: var(--type-mono-strong); border: var(--border-width) solid currentColor; border-radius: var(--radius-pill); padding: var(--sp-1) var(--sp-4); white-space: nowrap; }
+      .ov-back { appearance: none; background: transparent; border: var(--border-width) solid var(--line-2); border-radius: var(--radius-md); color: var(--text-muted); font: var(--type-mono-strong); padding: var(--sp-2) var(--sp-4); cursor: pointer; transition: var(--transition-hover); }
+      .ov-back:hover { color: var(--text-body); border-color: var(--line-strong); }
+      .ov-question { margin: 0; font: var(--type-heading); letter-spacing: var(--ls-tight); max-width: var(--measure-record); }
+      .ov-meta { display: flex; align-items: center; gap: var(--sp-5); flex-wrap: wrap; font: var(--type-mono); color: var(--text-meta); }
+      .ov-meta-item { display: inline-flex; align-items: center; gap: var(--sp-3); }
+      .ov-record { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--sp-7); display: flex; flex-direction: column; gap: var(--sp-6); }
+      .ov-body { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; }
+      .ov-challenges { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; border-right: var(--border-width) solid var(--line-1); }
+      .ov-challenge-head { padding: var(--sp-5) var(--sp-7) var(--sp-3); display: flex; align-items: center; gap: var(--sp-4); }
+      .ov-challenge-rows { flex: 1 1 auto; overflow-y: auto; padding-bottom: var(--sp-5); }
+      .ov-composer { flex: 0 0 auto; }
+      .ov-window-closed { flex: 0 0 auto; border-top: var(--border-width) solid var(--line-1); padding: var(--sp-5) var(--sp-7); }
+      .ov-ballot { flex: 0 0 auto; width: calc(var(--rail-roster) + var(--sp-9)); padding: var(--sp-6); overflow-y: auto; display: flex; flex-direction: column; gap: var(--sp-7); background: var(--surface-panel); }
+      .ov-options { display: flex; flex-direction: column; gap: var(--sp-3); }
+      .ov-cast { margin-top: var(--sp-5); width: 100%; appearance: none; padding: var(--sp-4) var(--sp-5); border-radius: var(--radius-md); border: none; cursor: pointer; background: var(--brass-500); color: var(--fg-on-accent); font: var(--type-body-strong); transition: var(--transition-hover); }
+      .ov-cast:disabled { background: var(--ink-600); color: var(--text-faint); cursor: default; }
+      .ov-notice { margin-top: var(--sp-4); font: var(--type-mono); color: var(--phase-failed); border-left: var(--border-width-accent) solid var(--phase-failed); padding-left: var(--sp-4); }
+      .ov-gap { margin-bottom: var(--sp-4); }
+      .ov-gap-t { margin-top: var(--sp-4); }
+      .ov-full { color: var(--phase-converged); }
+      .ov-roster { display: flex; flex-direction: column; gap: var(--sp-4); }
+      .ov-voter { display: flex; flex-direction: column; gap: var(--sp-2); align-items: stretch; }
+      .ov-resolve { margin-top: auto; appearance: none; padding: var(--sp-4) var(--sp-5); border-radius: var(--radius-md); background: transparent; border: var(--border-width) solid var(--brass-600); color: var(--text-accent); font: var(--type-mono-strong); cursor: pointer; transition: var(--transition-hover); }
+
       /* No breakpoint, deliberately. "Fixed desktop rails, never reflowed"
          (requirements §1.3) means the page does not respond — a narrow window
          gets a horizontal scrollbar, which is the honest outcome. A
@@ -85,6 +135,12 @@
         </div>
         <div class="group-label">rooms</div>
         <div id="sidebar"></div>
+        <div class="screens">
+          <div class="group-label">elsewhere</div>
+          <a class="screen-link" href="dm.html">Direct messages</a>
+          <a class="screen-link" href="records.html">Decision history</a>
+          <a class="screen-link accent" href="connect.html">+ Connect an agent</a>
+        </div>
       </div>
 
       <main>
@@ -98,6 +154,9 @@
         </div>
       </main>
     </div>
+
+    <!-- The deliberation overlay mounts here while one is open (§1.3). -->
+    <div id="overlay"></div>
 
     <script type="module">
       import { mountRoom } from './app/room.js';

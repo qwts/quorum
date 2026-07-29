@@ -204,3 +204,25 @@ the design side:
 
 Until then the composer's hint says what pressing send will do: `you will be
 asked for a name once`.
+
+### Q13 — The overlay's dimensions and the mock's pulse period have no tokens
+
+- **Where:** `src/ui/kit/room.html` (the deliberation overlay, #20),
+  `src/ui/kit/connect.html` (step 2's waiting dot).
+- **What I needed:** three values the `DeliberationOverlay` and `ConnectAgent`
+  mocks carry as literals: the overlay panel's size (`min(1060px,100%)` ×
+  `min(760px,100%)`), its ballot column's width (`flex: 0 1 320px; min-width:
+  244px`), and the waiting-dot pulse (`q-pulse 1.6s`/`1.8s`).
+- **Why the system does not answer it:** the spacing scale tops out at
+  `--sp-10` (64px) and the rail tokens describe the room's fixed chrome, not a
+  floating panel; the motion tokens stop at `--dur-slow` (220ms) and their own
+  prose says "nothing over 220ms", which the mock's 1.6s pulse contradicts.
+- **What I did instead:** the overlay is sized by inset (`--sp-8` padding on
+  the scrim) so it tracks the viewport with no literal; the ballot column is
+  `calc(var(--rail-roster) + var(--sp-9))` (280px, inside the mock's 244–320
+  range); the dots do not pulse, which is also what the room view already
+  decided for its feed label ("No pulse. Motion announces arrival and phase
+  change, nothing else").
+- **Blocking?** no — but if the floating-panel dimensions are meant to be
+  designed values, they need tokens; and the pulse needs either a duration
+  token above 220ms or the mocks need their animation removed.

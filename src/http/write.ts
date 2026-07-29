@@ -190,6 +190,19 @@ function dispatch(
     };
   }
 
+  // Convener only, and the domain enforces it — the overlay's "close
+  // challenges → open voting" button (#20) goes through the same call the
+  // close_challenges tool makes.
+  const closeChallenges = /^deliberations\/([^/]+)\/close-challenges$/.exec(route);
+  if (closeChallenges) {
+    return {
+      deliberation: quorum.closeChallenges({
+        deliberationId: segment(closeChallenges[1]!),
+        participantId: str(body, 'participantId'),
+      }),
+    };
+  }
+
   const vote = /^deliberations\/([^/]+)\/vote$/.exec(route);
   if (vote) {
     const choice = body.choice;

@@ -341,7 +341,10 @@ test('a deliberation is folded from its events, and its ballots stay secret', ()
   assert.deepEqual(live?.options, ['Add it now', 'Defer to v1']);
   // How many have voted is public, because turnout is what closes the phase.
   assert.equal(live?.cast, 1);
-  assert.equal(live?.eligible, 2);
+  // The frozen roster survives the fold as ids — the ballot_cast event's
+  // eligible count never downgrades it, or the overlay's quorum and
+  // ballots-in list would lose their denominators (#20).
+  assert.deepEqual(live?.eligible, ['p1', 'p2']);
 
   // What must not exist is a mapping from a voter to a choice. The event does
   // not carry one, so the model cannot hold one however it folds — the

@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>messages · quorum</title>
+    <link rel="stylesheet" href="../styles.css" />
+    <script type="module" src="../index.js"></script>
+    <style>
+      /* Fixed desktop rails, same skeleton as the room view (requirements
+         §1.3). Every value is a token — a literal here is a check failure. */
+      body { height: 100vh; overflow-y: hidden; overflow-x: auto; }
+      .app { display: flex; height: 100vh; }
+
+      .rail { width: var(--rail-nav); flex: 0 0 auto; border-right: var(--border-width) solid var(--line-1); display: flex; flex-direction: column; align-items: center; padding-top: var(--sp-5); gap: var(--sp-5); }
+      .mark { font: var(--type-heading); letter-spacing: var(--ls-tight); }
+      .mark b { color: var(--brass-500); font-weight: inherit; }
+
+      .side { width: var(--rail-sidebar); flex: 0 0 auto; border-right: var(--border-width) solid var(--line-1); display: flex; flex-direction: column; }
+      .brand { padding: var(--sp-5); }
+      .brand .wordmark { font: var(--fw-semibold) var(--fs-17)/var(--lh-snug) var(--font-sans); letter-spacing: var(--ls-tight); }
+      .brand .wordmark b { color: var(--brass-500); font-weight: inherit; }
+      .brand .where { font: var(--type-mono); color: var(--text-faint); margin-top: var(--sp-1); }
+      .group-label { font: var(--type-label); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--text-faint); padding: 0 var(--sp-5) var(--sp-3); }
+      .nav { padding: var(--sp-5); font: var(--type-mono); margin-top: auto; }
+
+      main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+      .column { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+      .stream { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; padding: var(--sp-7) 0; }
+
+      /* The thread head: who this is with, and what this surface is not. */
+      #thread-head { padding: 0 var(--sp-7) var(--sp-6); border-bottom: var(--border-width) solid var(--line-1); margin-bottom: var(--sp-6); }
+      .head-stack { display: flex; flex-direction: column; gap: var(--sp-4); align-items: flex-start; }
+      .lede { font: var(--type-body); color: var(--text-muted); max-width: var(--measure-message); }
+
+      /* Views own their internals; these are the classes they emit. */
+      .thread-list { display: flex; flex-direction: column; }
+      .thread { appearance: none; background: none; border: none; border-left: var(--border-width-accent) solid transparent; color: var(--text-muted); font: var(--type-body); text-align: left; display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-5); cursor: pointer; transition: var(--transition-hover); }
+      .thread:hover { background: var(--surface-hover); }
+      .thread.open { border-left-color: var(--brass-500); background: var(--surface-selected); }
+      .thread-when { margin-left: auto; font: var(--type-mono); color: var(--text-faint); }
+      .thread-empty { padding: 0 var(--sp-5); }
+      .rows { display: flex; flex-direction: column; }
+      .quiet { font: var(--type-mono); color: var(--text-faint); }
+      .empty { font: var(--type-body); color: var(--text-meta); padding: var(--sp-7); max-width: var(--measure-message); }
+
+      /* No breakpoint, deliberately — see room.html and QUESTIONS.md Q11. */
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <div class="rail">
+        <span class="mark">q<b>.</b></span>
+      </div>
+
+      <div class="side">
+        <div class="brand">
+          <div class="wordmark">quorum<b>.</b></div>
+          <div class="where">127.0.0.1 · local</div>
+        </div>
+        <div class="group-label">direct messages</div>
+        <div id="threads"></div>
+        <div class="nav"><a href="room.html">← back to the room view</a></div>
+      </div>
+
+      <main>
+        <div class="column">
+          <div class="stream" id="dm-stream-wrap">
+            <div id="thread-head"></div>
+            <div id="dm-stream"></div>
+          </div>
+          <div id="composer"></div>
+        </div>
+      </main>
+    </div>
+
+    <script type="module">
+      import { mountDm } from './app/dm.js';
+
+      const counterpart = new URLSearchParams(location.search).get('with') ?? undefined;
+
+      mountDm({ counterpart }).catch((error) => {
+        // Say what failed and what to do. Never a bare error, and never a
+        // spinner waiting on something that already gave up.
+        document.getElementById('dm-stream').replaceChildren(
+          Object.assign(document.createElement('div'), {
+            className: 'empty',
+            textContent: `Could not open your messages: ${error.message}. Check the server is running, then reload.`,
+          }),
+        );
+      });
+    </script>
+  </body>
+</html>
