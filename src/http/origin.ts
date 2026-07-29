@@ -3,9 +3,11 @@
 // This process listens on 127.0.0.1 with no auth, which is fine while it only
 // reads. The moment it writes, every page the human visits can reach it: a
 // script on any site can `fetch('http://127.0.0.1:4242/api/…', {method:'POST'})`
-// and post messages, cast ballots, or convene deliberations in their name. The
-// response is opaque to the attacker, but the write has already happened, and
-// this transport's whole product is a record of who said what.
+// — or, just as easily, `fetch('http://127.0.0.1:4242/mcp', …)` and place a
+// tool call directly — and post messages, cast ballots, or convene
+// deliberations in their name. The response is opaque to the attacker, but
+// the write has already happened, and this transport's whole product is a
+// record of who said what.
 //
 // Two checks close it, and both are needed:
 //
@@ -52,7 +54,7 @@ function hostname(value: string): string | null {
 }
 
 /**
- * Whether this request may write.
+ * Whether this request's Host and Origin are ones this server answers to.
  *
  * Returns the refusal to send, or null when it is allowed. Stated as data so
  * the reason reaches the caller instead of becoming a bare 403.
@@ -63,8 +65,13 @@ function hostname(value: string): string | null {
  * an attacker whose domain resolves to 127.0.0.1 sends their own hostname in
  * both headers, they agree, and the write lands as the human. A hostname the
  * server was never told to answer to is refused whatever else agrees with it.
+ *
+ * Shared by every surface that mutates state on a browser's behalf — the
+ * `/api/` write routes and the MCP endpoint's tool calls alike (#32). A tool
+ * call is a write wearing JSON-RPC, and the rebinding attack does not care
+ * which wire format carries it.
  */
-export function refuseWrite(req: IncomingMessage, hosts: Set<string> = allowedHosts()): string | null {
+export function refuseOrigin(req: IncomingMessage, hosts: Set<string> = allowedHosts()): string | null {
   const host = typeof req.headers.host === 'string' ? hostname(req.headers.host) : null;
   if (host === null || !hosts.has(host)) {
     return 'this server does not answer to that hostname';
@@ -74,9 +81,25 @@ export function refuseWrite(req: IncomingMessage, hosts: Set<string> = allowedHo
   if (typeof origin === 'string' && origin !== '' && origin !== 'null') {
     const from = hostname(origin);
     if (from === null || !hosts.has(from)) {
-      return 'cross-origin writes are refused; open the UI this server serves';
+      return 'cross-origin requests are refused; open the UI this server serves';
     }
   }
+  return null;
+}
+
+/**
+ * Whether this request may write.
+ *
+ * Everything {@link refuseOrigin} checks, plus content type: `application/json`
+ * is not a "simple request", so a cross-origin attempt is preflighted — and
+ * this server answers no preflight, so it never happens. Without this check
+ * an attacker drops to `text/plain`, which *is* simple, and skips the
+ * preflight entirely. GET has no body to type, so this is on top of, not
+ * instead of, the origin check — never a substitute for it.
+ */
+export function refuseWrite(req: IncomingMessage, hosts: Set<string> = allowedHosts()): string | null {
+  const refused = refuseOrigin(req, hosts);
+  if (refused) return refused;
 
   const type = (req.headers['content-type'] ?? '').split(';')[0]!.trim().toLowerCase();
   if (type !== 'application/json') {

@@ -11,11 +11,12 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
+import { request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join as joinPath } from 'node:path';
 
 import { openQuorum } from '../src/domain/quorum.ts';
-import { startServer } from '../src/mcp/server.ts';
+import { MCP_PATH, startServer } from '../src/mcp/server.ts';
 import { allowedHosts, refuseWrite } from '../src/http/origin.ts';
 import { certificateHost, explainTlsFailure, loadTls, readPassphrase } from '../src/http/tls.ts';
 
@@ -249,6 +250,35 @@ test('a rebound hostname is refused however well its headers agree', () => {
   const dev = { host: 'quorum.local.example.com', origin: 'https://quorum.local.example.com', 'content-type': 'application/json' };
   assert.match(refuseWrite(headers(dev), hosts)!, /does not answer/);
   assert.equal(refuseWrite(headers(dev), configured), null);
+});
+
+test('a rebound hostname is refused on the MCP endpoint too — a tool call is a write (#32)', async () => {
+  // post_message, vote, and claim_scope all arrive as MCP tool calls, over
+  // this same server, on /mcp rather than /api/. The guard above means
+  // nothing if that surface answers a rebound Host regardless. Node's
+  // http.request, connecting by IP with an explicit Host header, reproduces
+  // what a rebinding attacker's browser actually sends — unlike fetch, which
+  // derives Host from the URL and cannot be made to lie about it.
+  const rebound = await new Promise<{ status: number; body: any }>((resolve, reject) => {
+    const req = httpRequest(
+      {
+        host: '127.0.0.1',
+        port: server.port,
+        path: MCP_PATH,
+        method: 'POST',
+        headers: { host: 'evil.example', origin: 'http://evil.example', 'content-type': 'application/json' },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk) => chunks.push(chunk));
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, body: JSON.parse(Buffer.concat(chunks).toString()) }));
+      },
+    );
+    req.on('error', reject);
+    req.end(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }));
+  });
+  assert.equal(rebound.status, 403);
+  assert.match(rebound.body.error, /does not answer to that hostname/);
 });
 
 test('a malformed path is a bad request, not a server fault', async () => {
