@@ -281,6 +281,33 @@ test('a rebound hostname is refused on the MCP endpoint too — a tool call is a
   assert.match(rebound.body.error, /does not answer to that hostname/);
 });
 
+test('a text/plain tool call cannot skip the preflight on /mcp (#32)', async () => {
+  // refuseOrigin lets a literal `Origin: null` through (sandboxed iframes
+  // send it), and /mcp adds no content-type check of its own — the
+  // transport's insistence on application/json is what forces a cross-origin
+  // attempt into a preflight this server never answers. That insistence
+  // lives in the SDK, not in this repo, so pin it: if an upgrade ever
+  // relaxes it, this is the test that says the quiet assumption broke.
+  const simple = await new Promise<{ status: number }>((resolve, reject) => {
+    const req = httpRequest(
+      {
+        host: '127.0.0.1',
+        port: server.port,
+        path: MCP_PATH,
+        method: 'POST',
+        headers: { host: `127.0.0.1:${server.port}`, origin: 'null', 'content-type': 'text/plain' },
+      },
+      (res) => {
+        res.resume();
+        res.on('end', () => resolve({ status: res.statusCode ?? 0 }));
+      },
+    );
+    req.on('error', reject);
+    req.end(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }));
+  });
+  assert.ok(simple.status >= 400, `a simple-request content type must be refused, got ${simple.status}`);
+});
+
 test('a malformed path is a bad request, not a server fault', async () => {
   // `decodeURIComponent('%')` throws URIError, which is not a domain error, so
   // it escaped as a 500 carrying an internal message. The server survived it —
