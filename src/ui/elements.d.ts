@@ -170,6 +170,8 @@ export interface QDecisionCard extends HTMLElement {
   reason?: string;
   /** Deprecated alias for `reason`. */
   summary?: string;
+  /** Message seqs of the challenges the record cites (D4) — references, never copies. */
+  challengeRefs?: (string | number)[];
   /** `summary` for history lists: no tally, dissent collapses to a count. */
   variant?: 'full' | 'summary';
   openable?: boolean;
