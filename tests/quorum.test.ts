@@ -445,3 +445,4 @@ test('acting without identifying is refused by name', () => {
   );
   quorum.close();
 });
+

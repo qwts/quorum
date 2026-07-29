@@ -114,6 +114,43 @@ export function serveApi(req: IncomingMessage, res: ServerResponse, url: URL, qu
       return true;
     }
 
+    // DM surfaces (#42). `as` names whose view this is — self-asserted, the
+    // way every v0 write names its participant — and the domain hands back
+    // only conversations that participant is in. The audience filter these
+    // lean on lives in the domain, one layer down, which is the seam v1 auth
+    // will back with credentials instead of assertion.
+    if (route === 'dms') {
+      const as = url.searchParams.get('as') ?? '';
+      const counterpart = url.searchParams.get('with');
+      if (counterpart) {
+        const after = positiveInt(url.searchParams.get('after'), 0) || undefined;
+        const limit = positiveInt(url.searchParams.get('limit'), 100);
+        // Same shape as the room messages route: with `after` the caller is
+        // walking forward; without it this is a first paint and wants the
+        // tail of the thread, not its beginning (see recentMessages).
+        let thread = null;
+        let messages: unknown[] = [];
+        if (after) {
+          ({ messages, thread } = quorum.readDms({ participantId: as, with: counterpart, afterId: after, limit }));
+        } else {
+          const page = Math.max(limit, 200);
+          let all: any[] = [];
+          for (;;) {
+            const batch = quorum.readDms({ participantId: as, with: counterpart, afterId: all.at(-1)?.id, limit: page });
+            thread = batch.thread;
+            if (batch.messages.length === 0) break;
+            all = all.concat(batch.messages);
+            if (batch.messages.length < page) break;
+          }
+          messages = all.slice(-limit);
+        }
+        send(res, 200, { seq, thread, messages });
+      } else {
+        send(res, 200, { seq, threads: quorum.listDmThreads({ participantId: as }) });
+      }
+      return true;
+    }
+
     if (route === 'decisions') {
       send(res, 200, { seq, decisions: quorum.listDecisions({ room: url.searchParams.get('room') ?? undefined }) });
       return true;

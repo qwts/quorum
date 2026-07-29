@@ -234,3 +234,60 @@ test('a first paint gets the end of a long room, not the beginning', async () =>
     ['message 152', 'message 153'],
   );
 });
+
+test('a DM crosses the wire only inside its pair — stream, reads, and writes (#42)', async () => {
+  const before = quorum.latestSeq();
+  quorum.sendDm({ participantId: dana.id, to: codex.id, body: 'rotate the deploy key tonight' });
+
+  // The anonymous stream replays everything after `before` — except the DM,
+  // which it must not know exists. The public post gives the stream something
+  // to return so the assertion is about filtering, not about an empty stream.
+  const anonymous = await stream(`/api/events?after=${before}`, 2, () => {
+    quorum.postMessage({ room: 'protocol', participantId: dana.id, body: 'public, sent after the DM' });
+  });
+  assert.ok(!anonymous.some((f) => f.data.kind === 'dm_message'), 'no dm_message frame without ?as=');
+  assert.ok(!JSON.stringify(anonymous).includes('deploy key'), 'no DM content either');
+
+  // The same replay as the counterpart carries it — this is the DM screen's
+  // live half.
+  const scoped = await stream(`/api/events?after=${before}&as=${codex.id}`, 2);
+  const dm = scoped.find((f) => f.data.kind === 'dm_message');
+  assert.ok(dm, 'the counterpart stream delivers the DM');
+  assert.equal(dm.data.payload.message.body, 'rotate the deploy key tonight');
+
+  // A third party asking as themselves gets the shared feed, not the pair's.
+  const mallory = quorum.identify({ name: 'mallory-web', harness: 'human' }).participant;
+  const bystander = await stream(`/api/events?after=${before}&as=${mallory.id}`, 2);
+  assert.ok(!JSON.stringify(bystander).includes('deploy key'), 'naming yourself widens nothing that is not yours');
+
+  // First paint: the inbox and the thread, seq-stamped like every read.
+  const inbox = await get(`/api/dms?as=${codex.id}`);
+  assert.equal(inbox.status, 200);
+  assert.equal(typeof inbox.body.seq, 'number');
+  assert.equal(inbox.body.threads.length, 1);
+  assert.equal(inbox.body.threads[0].counterpart.name, 'Dana');
+
+  const thread = await get(`/api/dms?as=${codex.id}&with=${dana.id}`);
+  assert.deepEqual(
+    thread.body.messages.map((m: any) => m.body),
+    ['rotate the deploy key tonight'],
+  );
+
+  // A third party reading "their thread with Dana" reads exactly that — an
+  // empty conversation of their own, never the pair's.
+  const other = await get(`/api/dms?as=${mallory.id}&with=${dana.id}`);
+  assert.deepEqual(other.body.messages, []);
+
+  // The human write path sends through the same domain call the tool uses.
+  const reply = await fetch(`${origin}/api/dms`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ participantId: codex.id, to: dana.id, body: 'done — key rotated' }),
+  });
+  assert.equal(reply.status, 200);
+  const echoed = await get(`/api/dms?as=${dana.id}&with=${codex.id}`);
+  assert.deepEqual(
+    echoed.body.messages.map((m: any) => m.body),
+    ['rotate the deploy key tonight', 'done — key rotated'],
+  );
+});

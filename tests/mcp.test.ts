@@ -65,13 +65,16 @@ test('the surface is plain MCP tools any client can list', async () => {
     'join_room',
     'list_claims',
     'list_decisions',
+    'list_dms',
     'list_participants',
     'list_rooms',
     'post_message',
     'propose',
+    'read_dms',
     'read_messages',
     'release_claim',
     'renew_claim',
+    'send_dm',
     'vote',
     'wait_for_events',
   ]);
@@ -493,3 +496,4 @@ test('a hostile dissent stays data: quoted in no guidance, verbatim in the recor
   const record = result.structuredContent?.record as { ballots: { dissent: string | null }[] };
   assert.ok(record.ballots.some((b) => b.dissent === hostile), 'and the record keeps it verbatim, as data');
 });
+
