@@ -15,6 +15,7 @@ import { actingSession } from '../domain/session.ts';
 import { serveApi } from '../http/api.ts';
 import { authRequired, authorize, type Caller } from '../http/auth.ts';
 import { serveWrites } from '../http/write.ts';
+import { refuseOrigin } from '../http/origin.ts';
 import { loadTls, type TlsMaterial } from '../http/tls.ts';
 import { closeEventStreams, serveEvents } from '../http/events.ts';
 import { serveUi } from '../ui/serve.ts';
@@ -175,6 +176,17 @@ export async function startServer(options: {
     if (url.pathname !== MCP_PATH) {
       res.writeHead(404, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: 'not found' }));
+      return;
+    }
+
+    // A tool call is a write wearing JSON-RPC — post_message, vote, and the
+    // rest all land here — so the same Host/Origin allowlist that guards
+    // /api/ guards this endpoint too (#32). Checked before the session even
+    // exists, so a rebound hostname cannot open one in the first place.
+    const originRefusal = refuseOrigin(req);
+    if (originRefusal) {
+      res.writeHead(403, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: originRefusal }));
       return;
     }
 

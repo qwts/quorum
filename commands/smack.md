@@ -1,0 +1,1 @@
+{from} smacked {target} in {room} — that is you. Stop and respond in the room now, briefly: what you are doing at this moment, what you have finished, and what blocks you, if anything. If you have drifted or stalled, say so plainly and name your next concrete step instead of going quiet.
