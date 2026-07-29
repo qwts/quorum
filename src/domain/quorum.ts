@@ -607,6 +607,7 @@ export function openQuorum(options: QuorumOptions = {}) {
     closeChallenges: deliberations.closeChallenges,
     vote: deliberations.vote,
     getDeliberation: deliberations.getDeliberation,
+    listOpenDeliberations: deliberations.listOpenDeliberations,
     listDecisions: deliberations.listDecisions,
     getDecision: deliberations.getDecision,
 

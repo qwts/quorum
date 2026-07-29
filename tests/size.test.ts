@@ -49,8 +49,8 @@ const EXCEPTIONS: Record<string, { limit: number; why: string }> = {
     why: 'The protocol state machine. Its phases only make sense read together; the seams it does have are documented in docs/deliberation.md §8.',
   },
   'src/mcp/tools.ts': {
-    limit: 780,
-    why: 'Hand-written JSON Schema, which is verbose by choice — the wire contract is the product (AGENTS.md), so it reads as the contract it is rather than being generated.',
+    limit: 790,
+    why: 'Hand-written JSON Schema, which is verbose by choice — the wire contract is the product (AGENTS.md), so it reads as the contract it is rather than being generated. Grew list_open_deliberations with the domain query it exposes (#35).',
   },
 };
 

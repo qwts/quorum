@@ -128,6 +128,17 @@ export function serveApi(req: IncomingMessage, res: ServerResponse, url: URL, qu
       return true;
     }
 
+    // The room's open deliberations, for first paint: a page opened
+    // mid-deliberation seeds its fold from this instead of waiting for the
+    // next event on the feed (#35). The domain view is D6-safe — options and
+    // turnout, never what anyone chose.
+    const open = /^rooms\/([^/]+)\/deliberations$/.exec(route);
+    if (open) {
+      const room = segment(open[1]!);
+      send(res, 200, { seq, room, deliberations: quorum.listOpenDeliberations({ room }) });
+      return true;
+    }
+
     const messages = /^rooms\/([^/]+)\/messages$/.exec(route);
     if (messages) {
       const room = segment(messages[1]!);

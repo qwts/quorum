@@ -370,11 +370,34 @@ test('a closed deliberation stops being the room\'s current business', () => {
   }
 });
 
+test('a paint carries the room\'s open deliberation, and the feed takes over from it (#35)', () => {
+  // The bug this guards: a page loaded mid-deliberation folded from events
+  // alone, so the live proposal was invisible until the next event on it —
+  // and the phase could close without the late arrival ever seeing a ballot.
+  const state = seed(painted(), {
+    seq: 12,
+    deliberations: [{ ...DELIBERATION, phase: 'voting', rule: 'majority', cast: ['p2'] }],
+  });
+
+  const [live] = liveDeliberations(state, 'r1');
+  assert.equal(live.id, 'd1');
+  assert.equal(live.phase, 'voting');
+  assert.deepEqual(live.options, DELIBERATION.options, 'the ballot is castable from the paint alone');
+  assert.equal(live.cast, 1, 'the model keeps turnout as a count, matching what ballot_cast will say');
+
+  // The fold continues from the seeded entry — the paint seeds, the feed owns
+  // every change after.
+  const voted = apply(state, event(13, 'ballot_cast', { deliberationId: 'd1', by: 'codex:api', cast: 2, eligible: 2 }, 'r1'));
+  assert.equal(voted.deliberations.get('d1').cast, 2);
+  const closed = apply(voted, event(14, 'deliberation_converged', { deliberationId: 'd1', chosen: 0 }, 'r1'));
+  assert.deepEqual(liveDeliberations(closed, 'r1'), [], 'and it can close a deliberation it painted');
+});
+
 test('an event for a deliberation we never saw changes nothing', () => {
-  // A page opened mid-deliberation has no snapshot to start from — the read
-  // API has no route for an open one. Half-creating from a later event would
-  // draw a card with a phase and no question, which is worse than drawing
-  // nothing until the page is reloaded.
+  // A page opened mid-deliberation seeds from the paint — but an event can
+  // still name a deliberation this fold has never held (a room switched away
+  // from, a paint that failed). Half-creating from a later event would draw a
+  // card with a phase and no question, which is worse than drawing nothing.
   const state = painted();
   const orphan = apply(state, event(11, 'ballot_cast', { deliberationId: 'ghost', by: 'Dana', cast: 1, eligible: 2 }, 'r1'));
   assert.equal(orphan.deliberations.size, 0);
@@ -477,4 +500,22 @@ test('an older refresh cannot replace a newer history', () => {
   assert.equal(isFresher(12, 12), true, 'an equal stamp is the same history, so either is fine');
   assert.equal(isFresher(0, -1), true, 'the first paint always lands');
   assert.equal(isFresher(undefined as any, 5), false, 'a response with no stamp cannot be ordered, so it is not trusted');
+});
+
+test('a repaint retires a live deliberation the paint no longer lists (#35)', () => {
+  // The close happened while this page could not hear it — feed down, or a
+  // room switched away from. The closing event sits *behind* the repaint's
+  // seq, so replay is rejected as already-folded; the paint's silence is the
+  // only messenger, and it must be believed or the ballot is offered forever.
+  const opened = apply(painted(), event(11, 'deliberation_opened', {
+    deliberationId: 'd1', deliberation: DELIBERATION, by: 'codex:api',
+  }, 'r1'));
+  assert.equal(liveDeliberations(opened, 'r1').length, 1);
+
+  const repainted = seed(opened, { seq: 20, room: 'protocol', deliberations: [] });
+  assert.deepEqual(liveDeliberations(repainted, 'r1'), [], 'gone — the room has no current business');
+
+  // A repaint of a *different* room says nothing about this one.
+  const other = seed(opened, { seq: 20, room: 'elsewhere', rooms: [ROOM, { id: 'r2', name: 'elsewhere' }], deliberations: [] });
+  assert.equal(liveDeliberations(other, 'r1').length, 1, 'absence is a fact about the painted room only');
 });
