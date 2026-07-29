@@ -18,7 +18,10 @@ const HEADERS = { accept: 'application/json' };
  */
 async function read(path) {
   const response = await fetch(path, { headers: HEADERS });
-  const body = await response.json().catch(() => ({}));
+  // The cast is for the second typechecker: this file is checked by the UI
+  // project (lib.dom, `json(): any`) and, through the screens tests' import,
+  // by the root Node project, whose fetch types answer `unknown`.
+  const body = /** @type {any} */ (await response.json().catch(() => ({})));
   if (!response.ok) {
     // The status rides along so a caller can tell "that does not exist" from
     // "the request broke" — paintRoom treats the first as an answer.
@@ -42,7 +45,7 @@ async function write(path, body) {
     headers: { ...HEADERS, 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
-  const payload = await response.json().catch(() => ({}));
+  const payload = /** @type {any} */ (await response.json().catch(() => ({})));
   if (!response.ok) {
     // The server's refusals are written to be read — "join #protocol before
     // posting to it" — so they are surfaced as they stand, never replaced with

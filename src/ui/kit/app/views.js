@@ -20,6 +20,7 @@ import { liveClaims, messagesIn, participant } from './store.js';
  *
  * @param {import('./store.js').State} state
  * @param {any} room
+ * @param {string} [wanted]  the room name asked for, said back when it does not exist
  */
 export function streamView(state, room, wanted) {
   if (!room) {
