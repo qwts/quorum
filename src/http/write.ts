@@ -14,6 +14,8 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { QuorumError } from '../domain/errors.ts';
+import { actingSession } from '../domain/acting.ts';
+import { authRequired, authorize, refuseAs, HTTP_SOURCE, type Caller } from './auth.ts';
 import { refuseWrite } from './origin.ts';
 import type { Quorum } from '../domain/quorum.ts';
 
@@ -101,11 +103,36 @@ export async function serveWrites(
     return true;
   }
 
+  // The credential check, at the one seam both transports share (auth.ts).
+  // Nothing happens here unless QUORUM_AUTH says so, which is what keeps the
+  // v0 surface — and every test of it — working exactly as before.
+  let caller: Caller | null = null;
+  if (authRequired()) {
+    const check = authorize(req, quorum, { source: HTTP_SOURCE });
+    if ('refusal' in check) {
+      send(res, 401, { error: check.refusal });
+      return true;
+    }
+    caller = check.caller;
+  }
+
   const route = url.pathname.slice(API_PREFIX.length);
 
   try {
     const body = await readJson(req);
-    const result = await dispatch(route, body, quorum);
+    // `participantId` in a write body is a self-assertion, and v0 had no way
+    // to check it. With a credential present it must name the participant that
+    // credential identified as, or a token could write as anyone.
+    if (caller !== null) {
+      const wrong = refuseAs(caller, typeof body.participantId === 'string' ? body.participantId : null);
+      if (wrong !== null) {
+        send(res, 403, { error: wrong });
+        return true;
+      }
+    }
+    // Whatever this write appends is attributed to the caller's session
+    // (ADR-0001 §4.1); null is v0, attributed to no session.
+    const result = await actingSession(caller?.sessionId ?? null, () => dispatch(route, body, quorum, caller));
     if (!result) {
       send(res, 404, { error: `no such route: ${route}` });
       return true;
@@ -132,12 +159,18 @@ async function dispatch(
   route: string,
   body: Record<string, unknown>,
   quorum: Quorum,
+  caller: Caller | null,
 ): Promise<Record<string, unknown> | null> {
   // A browser names itself once and keeps the id. `identify` is idempotent on
   // (name, harness), so a reload rejoins the same participant rather than
   // minting a second one with the same name.
   if (route === 'identify') {
     const { participant } = quorum.identify({ name: str(body, 'name'), harness: HUMAN });
+    // Under auth the roster row belongs to the identity that authenticated,
+    // which is what makes `participantId` on every later write checkable.
+    if (caller !== null) {
+      quorum.identity.bindParticipant({ participantId: participant.id, principalId: caller.principalId });
+    }
     return { participant };
   }
 

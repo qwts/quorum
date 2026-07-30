@@ -21,6 +21,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { QuorumError } from '../domain/errors.ts';
+import { refuseView } from './auth.ts';
 import type { Quorum } from '../domain/quorum.ts';
 
 export const API_PREFIX = '/api/';
@@ -121,6 +122,15 @@ export function serveApi(req: IncomingMessage, res: ServerResponse, url: URL, qu
     // will back with credentials instead of assertion.
     if (route === 'dms') {
       const as = url.searchParams.get('as') ?? '';
+      // The seam v1 auth was always going to back with credentials, now that
+      // it can: under QUORUM_AUTH a DM view is readable only by the
+      // participant whose token asked for it (src/http/auth.ts). Off, this is
+      // the v0 assertion it always was.
+      const denied = refuseView(req, quorum, as);
+      if (denied !== null) {
+        send(res, 401, { error: denied });
+        return true;
+      }
       const counterpart = url.searchParams.get('with');
       if (counterpart) {
         // Presence decides the path, not the value: `after=0` is an explicit

@@ -22,7 +22,12 @@ CREATE TABLE IF NOT EXISTS participants (
   -- on anyone's status. kind is 'status' | 'blocked'.
   status       TEXT,
   status_kind  TEXT,
-  status_at    INTEGER
+  status_at    INTEGER,
+  -- Which agent identity this participant is, once one is authenticated
+  -- (ADR-0001). NULL is v0: a self-asserted (name, harness) with nothing
+  -- behind it. Claims, cursors, and DMs hang off participants and are
+  -- untouched by this column.
+  principal_id TEXT REFERENCES principals(id)
 );
 
 -- Identity is the pair an agent introduces itself with, so a reconnecting
@@ -138,6 +143,68 @@ CREATE TABLE IF NOT EXISTS dm_messages (
   created_at     INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS dm_messages_by_thread ON dm_messages (thread_id, id);
+
+-- Identity is a derivation tree rooted at a human account (ADR-0001,
+-- docs/design/agent-identity.md §2): account → principal → grant → session.
+-- Authority only attenuates downward, attribution reads upward, and revoking
+-- a node revokes its subtree. Phase 1 fills the tree from the operator's own
+-- machine; Phase 3 fills provider/subject in when humans sign in with OIDC.
+CREATE TABLE IF NOT EXISTS accounts (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  provider   TEXT,            -- OIDC issuer, once humans sign in (design §5)
+  subject    TEXT,            -- that provider's subject for this human
+  created_at INTEGER NOT NULL,
+  -- Banning the root cascades to every derivation and forecloses future
+  -- sponsorship (design §5.1): moderation targets the depth where the fault is.
+  revoked_at INTEGER
+);
+
+-- An agent identity. Sponsored, never self-registered (design §5): it exists
+-- because an account vouched for it, and that account holds the revocation
+-- switch. Revoking a principal revokes every grant beneath it.
+CREATE TABLE IF NOT EXISTS principals (
+  id         TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES accounts(id),
+  name       TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  revoked_at INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS principals_name ON principals (name);
+
+-- One agent-harness pairing's credential. Only the SHA-256 hash of the token
+-- is stored: the secret is shown once, at mint, and a database someone reads
+-- later holds nothing that can be replayed. The scopes column is one word in
+-- Phase 1 ('participant' — full participant rights); the vocabulary is
+-- Phase 2's, and this column is where it lands.
+CREATE TABLE IF NOT EXISTS grants (
+  id           TEXT PRIMARY KEY,
+  principal_id TEXT NOT NULL REFERENCES principals(id),
+  token_hash   TEXT NOT NULL,
+  scopes       TEXT NOT NULL,
+  created_at   INTEGER NOT NULL,
+  expires_at   INTEGER,
+  revoked_at   INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS grants_token ON grants (token_hash);
+
+-- What a grant is good for: opening exactly one session (design §4.1). Every
+-- action attributes to (principal, session), never to the principal alone.
+-- The asserted_ columns are what the agent said about itself — data, never
+-- authority, and never read by anything that decides what a caller may do.
+CREATE TABLE IF NOT EXISTS sessions (
+  id                    TEXT PRIMARY KEY,
+  grant_id              TEXT NOT NULL REFERENCES grants(id),
+  started_at            INTEGER NOT NULL,
+  last_seen_at          INTEGER NOT NULL,
+  ended_at              INTEGER,
+  ended_reason          TEXT,           -- 'superseded' | 'revoked'
+  source                TEXT NOT NULL,  -- the transport that established it
+  user_agent            TEXT,
+  asserted_conversation TEXT,
+  asserted_start        TEXT
+);
+CREATE INDEX IF NOT EXISTS sessions_live ON sessions (grant_id, ended_at, last_seen_at);
 
 CREATE TABLE IF NOT EXISTS events (
   seq        INTEGER PRIMARY KEY AUTOINCREMENT,

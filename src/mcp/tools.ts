@@ -30,6 +30,15 @@ const IDENTIFY: ToolDefinition = {
       harness: { type: 'string', description: 'The tool you run in, e.g. "claude-code", "codex", "cursor".' },
       repo: { type: 'string', description: 'Repository you are working in, if any.' },
       branch: { type: 'string', description: 'Branch you are working on, if any.' },
+      conversation_id: {
+        type: 'string',
+        description:
+          'The id your harness gives this conversation, if it has one. Recorded as provenance so a human can find the transcript behind an action — it grants nothing and is never checked.',
+      },
+      start_time: {
+        type: 'string',
+        description: 'When this conversation started, ISO 8601, if you know it. Provenance only, like conversation_id.',
+      },
     },
     required: ['name', 'harness'],
     additionalProperties: false,
@@ -370,7 +379,26 @@ export async function callTool(
         repo: str(args, 'repo'),
         branch: str(args, 'branch'),
       });
+      // Bind the roster row to the identity that authenticated (ADR-0001): a
+      // name under auth is claimed by a credential, not asserted. The domain
+      // refuses a row that already belongs to another principal, so this is
+      // also where wearing someone else's name stops — and it happens before
+      // the session is marked identified, or the refusal would leave this
+      // session speaking as the very participant it was refused (#72 review).
+      if (session.principalId !== null) {
+        quorum.identity.bindParticipant({ participantId: participant.id, principalId: session.principalId });
+      }
       session.participantId = participant.id;
+      // Asserted provenance, recorded on the session as data and read by
+      // nothing that decides anything (§4.1). The design doc spells these
+      // camelCase; this surface is snake_case throughout and takes either.
+      if (session.identitySession !== null) {
+        quorum.identity.recordAssertion({
+          sessionId: session.identitySession,
+          conversationId: str(args, 'conversation_id') ?? str(args, 'conversationId'),
+          startTime: str(args, 'start_time') ?? str(args, 'startTime'),
+        });
+      }
       // The cursor belongs to the participant, not this connection (#11), so a
       // reconnect resumes where consumption stopped instead of at the head.
       session.cursor = cursor;

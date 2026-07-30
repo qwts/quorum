@@ -27,6 +27,7 @@
 // those are about the stream rather than about the room.
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { refuseView } from './auth.ts';
 import type { Quorum } from '../domain/quorum.ts';
 
 export const EVENTS_PATH = '/api/events';
@@ -113,6 +114,17 @@ export function serveEvents(req: IncomingMessage, res: ServerResponse, url: URL,
   // nothing: this names whose *view* to take, never whose cursor to advance.
   const viewer = url.searchParams.get('as');
 
+  // Under QUORUM_AUTH the stream is credentialed and `as` must be the
+  // caller's own participant (src/http/auth.ts) — a page cannot watch someone
+  // else's audience-scoped feed by naming them. Refused in JSON rather than as
+  // an SSE frame: there is no stream yet to put a frame on.
+  const denied = refuseView(req, quorum, viewer);
+  if (denied !== null) {
+    res.writeHead(401, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: denied }));
+    return true;
+  }
+
   res.writeHead(200, {
     'content-type': 'text/event-stream; charset=utf-8',
     'cache-control': 'no-cache, no-transform',
@@ -140,6 +152,17 @@ export function serveEvents(req: IncomingMessage, res: ServerResponse, url: URL,
   void (async () => {
     let idleMs = 0;
     while (open) {
+      // Re-checked every slice, not once at open (#72 review): a stream is a
+      // long-lived read, and a grant revoked mid-stream must close it rather
+      // than ride the socket past the ban. Costs nothing while enforcement
+      // is off — refuseView returns at once — and while it is on, the same
+      // call touches the session, so a quiet watcher is not superseded for
+      // its silence.
+      const lapsed = refuseView(req, quorum, viewer);
+      if (lapsed !== null) {
+        res.write(frame(cursor, 'stream_error', { error: lapsed }));
+        break;
+      }
       let batch;
       try {
         batch = await quorum.waitForEvents({ afterSeq: cursor, timeoutMs: SLICE_MS, participantId: null, viewerId: viewer });

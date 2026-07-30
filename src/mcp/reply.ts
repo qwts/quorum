@@ -10,7 +10,17 @@ import { QuorumError, type Quorum } from '../domain/quorum.ts';
 // A session carries the caller's own cursor. Guidance must never point an
 // agent at the global feed head: an event another participant appended since
 // the caller last read would be skipped forever by following it.
-export type Session = { participantId: string | null; cursor: number };
+// `principalId` and `identitySession` are the authenticated half (ADR-0001
+// §4.1): who the credential says this is, and the session node it opened, so
+// every action this connection takes attributes to (principal, session). Both
+// are null when QUORUM_AUTH is off — v0 localhost trust, nothing behind the
+// name.
+export type Session = {
+  participantId: string | null;
+  cursor: number;
+  principalId: string | null;
+  identitySession: string | null;
+};
 
 export type Json = Record<string, unknown>;
 

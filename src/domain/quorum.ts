@@ -12,6 +12,8 @@ import { openCommandGuidance } from './command-guidance.ts';
 import { openCommands } from './commands.ts';
 import { openDeliberations } from './deliberation.ts';
 import { openDms, participantResolver } from './dm.ts';
+import { openIdentity } from './identity.ts';
+import { currentSession } from './acting.ts';
 import { QuorumError } from './errors.ts';
 
 export { QuorumError };
@@ -68,6 +70,10 @@ export type QuorumEvent = {
   // its echo from someone else's news.
   actorId: string | null;
   payload: Record<string, unknown>;
+  // Which session acted (ADR-0001 §4.1) — attribution is to (principal,
+  // session), never to a principal alone. Null on an uncredentialed v0 call
+  // and on anything the server did by itself.
+  sessionId: string | null;
   createdAt: number;
 };
 
@@ -126,6 +132,9 @@ export function openQuorum(options: QuorumOptions = {}) {
   addColumn('participants', 'status', 'TEXT');
   addColumn('participants', 'status_kind', 'TEXT');
   addColumn('participants', 'status_at', 'INTEGER');
+  addColumn('participants', 'principal_id', 'TEXT REFERENCES principals(id)');
+  addColumn('events', 'session_id', 'TEXT');
+  addColumn('accounts', 'revoked_at', 'INTEGER');
 
   // Everyone blocked in wait_for_events. Appending an event wakes them all;
   // each re-reads from its own cursor, so there is no per-waiter bookkeeping.
@@ -157,9 +166,23 @@ export function openQuorum(options: QuorumOptions = {}) {
     actorId: string | null,
     audience: string[] | null = null,
   ): void {
+    // (principal, session) attribution (ADR-0001 §4.1): the session comes from
+    // the call's own context rather than a parameter every domain operation
+    // would have to carry. An event with no actor has no session either — a
+    // lease expiring belongs to the clock, not to whoever happened to be
+    // calling when the sweep ran.
+    const sessionId = actorId === null ? null : currentSession();
     db.prepare(
-      'INSERT INTO events (kind, room_id, actor_id, payload, created_at, audience) VALUES (?, ?, ?, ?, ?, ?)',
-    ).run(kind, roomId, actorId, JSON.stringify(payload), now(), audience === null ? null : JSON.stringify(audience));
+      'INSERT INTO events (kind, room_id, actor_id, payload, created_at, audience, session_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run(
+      kind,
+      roomId,
+      actorId,
+      JSON.stringify(payload),
+      now(),
+      audience === null ? null : JSON.stringify(audience),
+      sessionId,
+    );
     for (const wake of waiters) wake();
   }
 
@@ -291,6 +314,7 @@ export function openQuorum(options: QuorumOptions = {}) {
       room_id: string | null;
       actor_id: string | null;
       payload: string;
+      session_id: string | null;
       created_at: number;
     }[];
     return rows.map((row) => ({
@@ -299,6 +323,7 @@ export function openQuorum(options: QuorumOptions = {}) {
       roomId: row.room_id,
       actorId: row.actor_id,
       payload: JSON.parse(row.payload) as Record<string, unknown>,
+      sessionId: row.session_id,
       createdAt: row.created_at,
     }));
   }
@@ -360,6 +385,12 @@ export function openQuorum(options: QuorumOptions = {}) {
   // Direct messages compose the same way; their events are audience-scoped
   // through the appendEvent they are handed (docs/deliberation.md §8 seams).
   const dms = openDms({ db, now, appendEvent, requireParticipant });
+
+  // Identity composes the same way (ADR-0001): accounts, principals, grants,
+  // and sessions over the same db and feed. It is transport-free — the check
+  // that a request carries a good credential lives at one seam in
+  // src/http/auth.ts, which asks these questions of this object.
+  const identity = openIdentity({ db, now, appendEvent });
 
   const api = {
     close(): void {
@@ -563,6 +594,10 @@ export function openQuorum(options: QuorumOptions = {}) {
         createdAt: row.created_at,
       }));
     },
+
+    // Tokens, principals, grants, and sessions (ADR-0001), namespaced because
+    // they answer about the caller rather than about the room.
+    identity,
 
     // Direct messages (requirements 1.1 #7), composed from src/domain/dm.ts.
     // The dm_message event is audience-scoped to its pair: the counterpart's
