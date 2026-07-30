@@ -4,13 +4,15 @@
 //
 // QUORUM_DB   path to the SQLite file (default ~/.quorum/quorum.db)
 // QUORUM_PORT port to listen on (default 4242)
-// QUORUM_HOST bind address (default 127.0.0.1 — v0 trusts the machine
-//             boundary and nothing else, so widening this needs the auth
-//             that v1 brings, not a flag)
+// QUORUM_HOST bind address (default 127.0.0.1). Binding beyond loopback is
+//             a checked precondition, not a flag (requirements §4): startup
+//             refuses unless QUORUM_AUTH is on and QUORUM_HOSTS names the
+//             hostname agents will reach this server by. docs/deploy.md is
+//             the recipe.
 // QUORUM_HOSTS extra hostnames the browser write guard accepts, comma
 //             separated. A name is never inferred from the request.
 // QUORUM_AUTH set it to require a quorum access token on /mcp and on the
-//             /api writes and ?as= read seams (ADR-0001). Absent or 0 is v0:
+//             whole /api surface, reads included (ADR-0001). Absent or 0 is v0:
 //             localhost trust, self-asserted identity, nothing to configure.
 //             Mint a token with `npm run mint-token -- --name <agent>`.
 // QUORUM_SESSION_GRACE_MS
@@ -34,6 +36,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { openQuorum } from './domain/quorum.ts';
+import { guardBind } from './http/bind.ts';
 import { certificateHost, explainTlsFailure, loadTls } from './http/tls.ts';
 import { MCP_PATH, startServer } from './mcp/server.ts';
 import { checkDesignDrift } from './ui/drift.ts';
@@ -54,10 +57,21 @@ try {
   process.exit(1);
 }
 
+// The bind guard, in the same posture as TLS above: a wide bind that cannot
+// work — no credential gate, or no hostname the origin allowlist answers to —
+// is one clear sentence now, not a refused request later (requirements §4).
+let host: string;
+try {
+  host = guardBind();
+} catch (error) {
+  process.stderr.write(`quorum: refusing to bind — ${error instanceof Error ? error.message : String(error)}\n`);
+  process.exit(1);
+}
+
 const server = await startServer({
   quorum,
   port: Number(process.env.QUORUM_PORT ?? 4242),
-  host: process.env.QUORUM_HOST ?? '127.0.0.1',
+  host,
   tls,
 });
 

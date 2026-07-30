@@ -12,6 +12,9 @@ Planning and design documents for quorum. Ordered reading:
 4. [Agent identity](design/agent-identity.md) — identity, authentication,
    and attribution for agents and humans, decided before the code that
    implements it ([ADR-0001](decisions/ADR-0001-agent-identity.md)).
+5. [Deployment](deploy.md) — the recipe that takes quorum off the laptop:
+   an always-on host, credential-gated from day one, Tailscale or public
+   TLS, backups (#53).
 
 Repo-scoped decisions live in [decisions/](decisions/README.md).
 

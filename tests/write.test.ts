@@ -250,6 +250,15 @@ test('a rebound hostname is refused however well its headers agree', () => {
   const dev = { host: 'quorum.local.example.com', origin: 'https://quorum.local.example.com', 'content-type': 'application/json' };
   assert.match(refuseWrite(headers(dev), hosts)!, /does not answer/);
   assert.equal(refuseWrite(headers(dev), configured), null);
+
+  // An entry spelled with a scheme or a port means the hostname it names.
+  // Requests arrive parsed down to a hostname, so a verbatim `host:port`
+  // entry would match nothing: the guard would bless a deployment at startup
+  // that then 403s every remote call — the half-configured state #53 exists
+  // to make impossible.
+  const spelled = allowedHosts({ QUORUM_HOSTS: 'https://quorum.example.com, quorum.example.net:4242' } as NodeJS.ProcessEnv);
+  assert.ok(spelled.has('quorum.example.com'), 'a scheme spelling normalizes to its hostname');
+  assert.ok(spelled.has('quorum.example.net'), 'and so does host:port');
 });
 
 test('a rebound hostname is refused on the MCP endpoint too — a tool call is a write (#32)', async () => {

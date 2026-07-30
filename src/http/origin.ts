@@ -33,8 +33,13 @@ import type { IncomingMessage } from 'node:http';
 export function allowedHosts(env: NodeJS.ProcessEnv = process.env): Set<string> {
   const extra = (env.QUORUM_HOSTS ?? '')
     .split(',')
-    .map((name) => name.trim().toLowerCase())
-    .filter(Boolean);
+    .map((name) => name.trim())
+    .filter(Boolean)
+    // Normalized through the same parser the request side uses (hostname
+    // below), so an entry spelled with a scheme or port — `https://q.example`,
+    // `q.example:4242` — means the hostname it names instead of silently
+    // matching nothing and refusing every request the startup guard approved.
+    .map((name) => hostname(name) ?? name.toLowerCase());
   return new Set(['127.0.0.1', 'localhost', '::1', '[::1]', ...extra]);
 }
 
