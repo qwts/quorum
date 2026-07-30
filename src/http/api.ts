@@ -95,6 +95,19 @@ export function serveApi(req: IncomingMessage, res: ServerResponse, url: URL, qu
 
   const route = url.pathname.slice(API_PREFIX.length);
 
+  // Under QUORUM_AUTH, every read requires a credential — not only the DM
+  // seam. Rooms, decisions and message history are the product's memory, and
+  // a wide bind that startup certified as credential-gated (bind.ts, #53)
+  // must not serve them to whoever can reach the port. `as` additionally
+  // names whose view a DM read is, checked against the token that asked;
+  // every other route just needs a token that is good.
+  const viewer = route === 'dms' ? (url.searchParams.get('as') ?? '') : null;
+  const denied = refuseView(req, quorum, viewer);
+  if (denied !== null) {
+    send(res, 401, { error: denied });
+    return true;
+  }
+
   // Before the read, deliberately. See the note at the top of this file.
   const seq = quorum.latestSeq();
 
@@ -115,22 +128,12 @@ export function serveApi(req: IncomingMessage, res: ServerResponse, url: URL, qu
       return true;
     }
 
-    // DM surfaces (#42). `as` names whose view this is — self-asserted, the
-    // way every v0 write names its participant — and the domain hands back
-    // only conversations that participant is in. The audience filter these
-    // lean on lives in the domain, one layer down, which is the seam v1 auth
-    // will back with credentials instead of assertion.
+    // DM surfaces (#42). `as` names whose view this is — self-asserted in
+    // v0, and checked against the credential by the gate above when
+    // QUORUM_AUTH is on — and the domain hands back only conversations that
+    // participant is in.
     if (route === 'dms') {
-      const as = url.searchParams.get('as') ?? '';
-      // The seam v1 auth was always going to back with credentials, now that
-      // it can: under QUORUM_AUTH a DM view is readable only by the
-      // participant whose token asked for it (src/http/auth.ts). Off, this is
-      // the v0 assertion it always was.
-      const denied = refuseView(req, quorum, as);
-      if (denied !== null) {
-        send(res, 401, { error: denied });
-        return true;
-      }
+      const as = viewer ?? '';
       const counterpart = url.searchParams.get('with');
       if (counterpart) {
         // Presence decides the path, not the value: `after=0` is an explicit

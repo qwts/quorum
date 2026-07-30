@@ -252,6 +252,23 @@ test('the ?as= read seams answer only to the participant whose token asked', asy
   watching.abort();
 });
 
+test('under auth every read route needs a credential, not only the DM seam', async () => {
+  // The startup precondition (#53) certifies a wide bind as credential-gated;
+  // this is what makes that certificate true of the read surface. Reachable
+  // must not mean readable: room history, decisions and the roster answer
+  // only to a token, because on a wide bind "whoever can reach the port" is
+  // the public internet or the whole tailnet, not the machine's owner.
+  for (const route of ['rooms', 'participants', 'claims', 'decisions', 'rooms/authed-room/messages']) {
+    const bare = await fetch(`${origin}/api/${route}`);
+    assert.equal(bare.status, 401, `/${route} is closed without a token`);
+    assert.match(JSON.stringify(await bare.json()), /Authorization: Bearer/, 'and the refusal says what would open it');
+  }
+
+  const { token } = mint('skill:reader');
+  const credentialed = await fetch(`${origin}/api/rooms`, { headers: { authorization: `Bearer ${token}` } });
+  assert.equal(credentialed.status, 200, 'any token the server minted reads');
+});
+
 test('nothing the server records or answers with carries a token', () => {
   const feed = JSON.stringify(quorum.readEvents({ afterSeq: 0, limit: 500 }));
   assert.doesNotMatch(feed, /qpat_/, 'the feed names grants and sessions, never secrets');

@@ -12,7 +12,7 @@
 // things, so both are checked here, in words:
 //
 //   * **The credential gate.** With QUORUM_AUTH off the server believes every
-//     request, which was only ever safe of requests that had already crossed
+//     request, which was only ever safe for requests that had already crossed
 //     the machine boundary.
 //   * **A hostname it answers to.** The Host/Origin allowlist (origin.ts, #32)
 //     refuses every name it was not told, and remote clients reach a server
@@ -44,7 +44,10 @@ export function isLoopback(host: string): boolean {
  * JSON-quoted anyway, the same rule domain errors follow.
  */
 export function guardBind(env: NodeJS.ProcessEnv = process.env): string {
-  const host = env.QUORUM_HOST ?? '127.0.0.1';
+  // `server.listen` wants a bare address: an IPv6 literal spelled with URL
+  // brackets (`[::1]`) is unwrapped rather than handed over verbatim, where
+  // it would fail at listen after the guard said yes.
+  const host = (env.QUORUM_HOST ?? '127.0.0.1').trim().replace(/^\[(.+)\]$/, '$1');
   if (isLoopback(host)) return host;
 
   if (!authRequired(env)) {

@@ -88,7 +88,8 @@ recite if you skip it.
 
 ### 3.1 `QUORUM_AUTH=1` — the credential gate, on from day one
 
-Every `/mcp` call and every `/api` write now requires
+Every `/mcp` call and every `/api` request — reads included, because
+reachable must not mean readable — now requires
 `Authorization: Bearer qpat_…`; requests without a valid token get a 401
 that says what is missing and where a token comes from, and never echoes
 the credential. This is the day-one bar from the issue's re-scope: no
@@ -188,7 +189,8 @@ sudo systemctl enable --now quorum
 journalctl -u quorum -f     # the startup line, or the precondition refusing in words
 ```
 
-Minting on this host runs as the service user so the file stays its:
+Minting on this host runs as the service user, so the database file stays
+owned by it:
 
 ```bash
 cd /opt/quorum && sudo -u quorum QUORUM_DB=/var/lib/quorum/quorum.db \
@@ -214,6 +216,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY src ./src
+COPY scripts ./scripts
 COPY commands ./commands
 CMD ["node", "src/index.ts"]
 ```
@@ -285,6 +288,12 @@ Fly, run the same command over `fly ssh console` and fetch the copy with
   ([design §3.2](design/agent-identity.md)); the OAuth 2.1 consent flow
   (§3.1) lands on the same gate later and lets spec-conformant harnesses
   discover the token source themselves instead of being handed a PAT.
+- **The web UI over a remote deployment.** Under `QUORUM_AUTH` the read
+  API is credential-gated too, and a browser has no header configuration to
+  hold a bearer token — human sign-in (design §6) is a later phase alongside
+  OAuth. Until it lands, the UI is the loopback, auth-off convenience it was
+  in v0; an operator inspects a remote instance with the same credential an
+  agent would use: `curl -H "Authorization: Bearer qpat_…" https://…/api/rooms`.
 - **Multi-tenancy and horizontal scale.** One process, one SQLite file, one
   team. That is the product at this stage, not a limitation to engineer
   around.

@@ -12,7 +12,7 @@
 // QUORUM_HOSTS extra hostnames the browser write guard accepts, comma
 //             separated. A name is never inferred from the request.
 // QUORUM_AUTH set it to require a quorum access token on /mcp and on the
-//             /api writes and ?as= read seams (ADR-0001). Absent or 0 is v0:
+//             whole /api surface, reads included (ADR-0001). Absent or 0 is v0:
 //             localhost trust, self-asserted identity, nothing to configure.
 //             Mint a token with `npm run mint-token -- --name <agent>`.
 // QUORUM_SESSION_GRACE_MS
