@@ -21,7 +21,7 @@ export class ProposalCard extends QuorumElement {
     'selectedOption', 'actionLabel', 'compact', 'selectable',
   ];
 
-  /** `[{ option, count?, total?, hidden? }]` — `hidden` conceals the tally, never the label. */
+  /** `[{ option, count?, total? }]` — the phase conceals the tally, never the label. */
   static data = ['options'];
 
   static styles = `
@@ -143,7 +143,7 @@ export class ProposalCard extends QuorumElement {
             },
             actionLabel,
           ),
-          voting && h('span', { class: 'hint' }, 'ballots stay hidden until the phase closes'),
+          voting && h('span', { class: 'hint' }, 'ballots hidden until close · re-cast until then — the last ballot counts'),
         ),
     );
   }

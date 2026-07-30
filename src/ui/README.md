@@ -1,12 +1,12 @@
 # `src/ui` — the Quorum UI library
 
-Seven components, one token file, no build step. This library exists so that
+Eight components, one token file, no build step. This library exists so that
 **an agent can build a screen without making a visual decision.** If you find
 yourself choosing a colour, a size, a radius, a duration or a phase hue, stop:
 that is the bug this library was written to remove. See
 [Where the design does not answer](#where-the-design-does-not-answer).
 
-Implements the Quorum Design System `0.2.0`
+Implements the Quorum Design System `0.4.0`
 ([`DESIGN_VERSION.md`](DESIGN_VERSION.md), handed off on
 [#13](https://github.com/qwts/quorum/issues/13)).
 
@@ -51,9 +51,10 @@ phaseColor('voting');                            // → 'var(--phase-voting)'
 | `<q-message-row>` | one row of a stream or DM | `visibility="private"` for a row only this caller saw — no `seq`, because no event carried it |
 | `<q-proposal-card>` | a live deliberation | offer **only** the action the phase allows; out-of-phase actions are server-rejected |
 | `<q-phase-stepper>` | the protocol phases | `Failed` **replaces** the terminal step; never both, never a fifth box |
-| `<q-vote-chip>` | a ballot, a vote, a tally row | during voting pass `ballot-hidden` — a visible tally is the anchoring hidden ballots prevent |
+| `<q-vote-chip>` | a ballot, a vote, a tally row | `ballot-hidden` conceals a **cast ballot's content**; the **phase** conceals the tally — the two are separate |
 | `<q-dissent-badge>` | dissent | verbatim, in full, violet. No truncation, no "show more", ever |
 | `<q-decision-card>` | the record | immutable: no edit affordance. A correction is a new deliberation |
+| `<q-composer>` | the one input: room stream, DM thread, challenge window | posts a **message**, never casts a ballot — a stance typed here during a challenge is public voting |
 
 Interactive components dispatch events rather than taking callbacks:
 `<q-vote-chip interactive>` fires `select` (with `detail.option`), and
@@ -153,6 +154,6 @@ nothing v0 needs.
 `design-version.json` records what this library implements; `DESIGN_VERSION.md`
 is the design's own receipt. [`drift.ts`](drift.ts) compares them and
 `tests/ui.test.ts` fails when they disagree — a mismatch is a visible state,
-never a code-review conversation. Deltas between the shipped `0.2.0` snapshot
-and what is implemented are listed in `design-version.json` with the reason for
-each; there are three, and none of them is a value someone picked.
+never a code-review conversation. Deltas between the shipped design and what
+is implemented are listed in `design-version.json` with the reason for each;
+there are two, and none of them is a value someone picked.

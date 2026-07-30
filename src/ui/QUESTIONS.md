@@ -83,7 +83,9 @@ library implements the two-value union and records the delta as `D-1` in
 - **What I did instead:** implemented neither. `<q-proposal-card>` renders the
   hint the design gives for the *voting phase* — "ballots stay hidden until the
   phase closes" — which is true under both readings, and I wrote no sentence
-  about re-casting at all. Recorded as `D-2`.
+  about re-casting at all. Recorded as `D-2` — since retired from
+  `design-version.json`: 0.4.0 closed Q6 and its `note` field carries the
+  ruling in D-2's place.
 - **Blocking?** no for the library; **yes for the overlay screen**, which has to
   say something in that spot.
 - **Ruled 2026-07-25 — routed to the designer, not settled here.** Our human's
