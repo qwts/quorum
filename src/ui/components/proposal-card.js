@@ -143,7 +143,7 @@ export class ProposalCard extends QuorumElement {
             },
             actionLabel,
           ),
-          voting && h('span', { class: 'hint' }, 'ballots stay hidden until the phase closes'),
+          voting && h('span', { class: 'hint' }, 'ballots hidden until close · re-cast until then — the last ballot counts'),
         ),
     );
   }

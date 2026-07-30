@@ -23,7 +23,7 @@ export function bannerView(deliberation, onOpen) {
   if (!deliberation) return null;
   const copy =
     deliberation.phase === 'voting'
-      ? 'Voting — ballots stay hidden until the phase closes'
+      ? 'Voting — ballots hidden until close · re-cast until then — the last ballot counts'
       : 'Challenge window open — bounded discussion, then the convener closes it';
   return h(
     'div',
