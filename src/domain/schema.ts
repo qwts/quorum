@@ -171,9 +171,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS principals_name ON principals (name);
 
 -- One agent-harness pairing's credential. Only the SHA-256 hash of the token
 -- is stored: the secret is shown once, at mint, and a database someone reads
--- later holds nothing that can be replayed. `scopes` is one word in Phase 1
--- ('participant' — full participant rights); the vocabulary is Phase 2's, and
--- this column is where it lands.
+-- later holds nothing that can be replayed. The scopes column is one word in
+-- Phase 1 ('participant' — full participant rights); the vocabulary is
+-- Phase 2's, and this column is where it lands.
 CREATE TABLE IF NOT EXISTS grants (
   id           TEXT PRIMARY KEY,
   principal_id TEXT NOT NULL REFERENCES principals(id),

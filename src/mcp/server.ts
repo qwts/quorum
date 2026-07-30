@@ -11,7 +11,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { Quorum } from '../domain/quorum.ts';
-import { actingSession } from '../domain/session.ts';
+import { actingSession } from '../domain/acting.ts';
 import { serveApi } from '../http/api.ts';
 import { authRequired, authorize, type Caller } from '../http/auth.ts';
 import { serveWrites } from '../http/write.ts';

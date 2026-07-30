@@ -2,16 +2,15 @@
 // §4), and the attribution every action row carries.
 //
 // A grant opens a session, and a session — not the principal — is what an
-// action belongs to. That is the whole point of §4.1: an action taken with a
-// stolen credential lands in its own session node, with its own id, start
-// time, and origin, so an operator reads a distinct record instead of chasing
-// ghosts through the victim's transcript. §4.2 is the other half: one live
-// session per grant, so theft *during* a live session is refused outright.
+// action belongs to (§4.1): an action taken with a stolen credential lands in
+// its own session node, with its own id, start time, and origin, so an
+// operator reads a distinct record instead of chasing ghosts through the
+// victim's transcript. §4.2 is the other half — one live session per grant, so
+// theft *during* a live session is refused outright.
 //
 // Split from identity.ts because the two answer different questions: "is this
 // credential good" and "who is acting right now".
 
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 
@@ -36,23 +35,6 @@ export type Deps = {
     audience?: string[] | null,
   ) => void;
 };
-
-// Which session an action belongs to, carried beside the call rather than
-// threaded through every domain signature: the session is a fact about the
-// request, not an argument to postMessage. AsyncLocalStorage keeps it exact
-// under concurrency — two agents' calls interleave at every await, and a
-// module-level variable would file one agent's write under the other's
-// session, which is the ghost-chasing this design exists to end.
-const ACTING = new AsyncLocalStorage<string>();
-
-/** Run `fn` attributed to `sessionId`. Null is v0: attributed to no session. */
-export function actingSession<T>(sessionId: string | null, fn: () => T): T {
-  return sessionId === null ? fn() : ACTING.run(sessionId, fn);
-}
-
-export function currentSession(): string | null {
-  return ACTING.getStore() ?? null;
-}
 
 type SessionRow = {
   id: string; grant_id: string; started_at: number; last_seen_at: number;
@@ -99,12 +81,12 @@ export function openSessions(deps: Deps) {
   /**
    * Establish a session on a grant: the moment attribution starts.
    *
-   * Refused while another session on the grant is live — that is what makes
+   * Refused while another session on the grant is live — which is what makes
    * theft of a credential during a live session prevented rather than merely
-   * noticed. Past the grace window the silent session is ended and superseded
-   * instead, so a crashed harness resumes without needing a human. Either way
-   * the feed carries it: a second session on one grant is the sponsoring
-   * human's business, and their revocation is one action away.
+   * noticed. Past the grace window the silent session is superseded instead,
+   * so a crashed harness resumes without needing a human. Either way the feed
+   * carries it: a second session on one grant is the sponsoring human's
+   * business, and their revocation is one action away.
    */
   function establish(input: {
     grantId: string;
@@ -134,8 +116,10 @@ export function openSessions(deps: Deps) {
         ok: false,
         refusal:
           `that credential already holds a live session (${held.id}), last seen ${seconds(at - held.last_seen_at)}s ago` +
-          ` — a grant carries one session at a time. It frees after ${seconds(graceMs)}s of silence, and the operator can` +
-          ` revoke the grant now if this was not you.`,
+          ` — a grant carries one session at a time. It frees after ${seconds(graceMs)}s of silence, or at once when that` +
+          ` session disconnects cleanly. If you need two at the same time — a second harness, or a script beside it —` +
+          ` have the operator mint a second token, so the two are told apart in the record. If this was not you, the` +
+          ` operator can revoke the grant now.`,
       };
     }
 
@@ -175,10 +159,9 @@ export function openSessions(deps: Deps) {
     /**
      * The PAT-over-HTTP path (§3.2): the first authenticated request mints the
      * session and every later one rides it, so `(principal, session)` holds on
-     * every credentialed surface rather than only behind an MCP initialize.
-     * Riding a session this transport already opened is not a second
-     * establishment, so the rule above applies to sessions opened elsewhere —
-     * which is where a stolen credential shows up.
+     * every credentialed surface, not only behind an MCP initialize. Riding a
+     * session this transport already opened is not a second establishment, so
+     * the rule above still bites where a stolen credential shows up.
      */
     attach(input: { grantId: string; source: string; userAgent?: string | null; graceMs?: number }):
       | Established
@@ -253,3 +236,5 @@ export function openSessions(deps: Deps) {
     },
   };
 }
+
+export type Sessions = ReturnType<typeof openSessions>;

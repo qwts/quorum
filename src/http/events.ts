@@ -27,6 +27,7 @@
 // those are about the stream rather than about the room.
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { refuseView } from './auth.ts';
 import type { Quorum } from '../domain/quorum.ts';
 
 export const EVENTS_PATH = '/api/events';
@@ -112,6 +113,17 @@ export function serveEvents(req: IncomingMessage, res: ServerResponse, url: URL,
   // is the seam v1 auth will back with credentials. Watching still consumes
   // nothing: this names whose *view* to take, never whose cursor to advance.
   const viewer = url.searchParams.get('as');
+
+  // Under QUORUM_AUTH the stream is credentialed and `as` must be the
+  // caller's own participant (src/http/auth.ts) — a page cannot watch someone
+  // else's audience-scoped feed by naming them. Refused in JSON rather than as
+  // an SSE frame: there is no stream yet to put a frame on.
+  const denied = refuseView(req, quorum, viewer);
+  if (denied !== null) {
+    res.writeHead(401, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: denied }));
+    return true;
+  }
 
   res.writeHead(200, {
     'content-type': 'text/event-stream; charset=utf-8',

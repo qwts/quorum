@@ -30,6 +30,9 @@ import type { Quorum } from '../domain/quorum.ts';
 
 export const AUTH_ENV = 'QUORUM_AUTH';
 
+/** What a session record says it was opened through (ADR-0001 §4.1). */
+export const HTTP_SOURCE = 'http';
+
 /** Whether credentials are enforced. Absent or `0` is v0 — nothing changes. */
 export function authRequired(env: NodeJS.ProcessEnv = process.env): boolean {
   const value = (env[AUTH_ENV] ?? '').trim().toLowerCase();
@@ -147,4 +150,17 @@ export function refuseAs(caller: Caller, participantId: string | null | undefine
     return 'that participant is not the one your credential identified as; a token speaks only for its own identity';
   }
   return null;
+}
+
+/**
+ * The `?as=` read seams, in one call: authorize the request, then insist the
+ * view it asks for is its own. Returns the refusal to send, or null when the
+ * read may proceed — including when enforcement is off, which is what keeps
+ * every v0 reader working untouched.
+ */
+export function refuseView(req: IncomingMessage, quorum: Quorum, as: string | null): string | null {
+  if (!authRequired()) return null;
+  const check = authorize(req, quorum, { source: HTTP_SOURCE });
+  if ('refusal' in check) return check.refusal;
+  return refuseAs(check.caller, as);
 }

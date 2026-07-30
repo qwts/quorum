@@ -20,7 +20,7 @@
     "allowJs": true,
     "checkJs": true
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  "include": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts"],
   // The browser half of src/ui — the components and the element contract —
   // is checked by src/ui/tsconfig.json, which has the DOM lib and no Node
   // types. src/ui/drift.ts and src/ui/serve.ts are Node and stay here, so

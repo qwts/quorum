@@ -9,6 +9,14 @@
 //             that v1 brings, not a flag)
 // QUORUM_HOSTS extra hostnames the browser write guard accepts, comma
 //             separated. A name is never inferred from the request.
+// QUORUM_AUTH set it to require a quorum access token on /mcp and on the
+//             /api writes and ?as= read seams (ADR-0001). Absent or 0 is v0:
+//             localhost trust, self-asserted identity, nothing to configure.
+//             Mint a token with `npm run mint-token -- --name <agent>`.
+// QUORUM_SESSION_GRACE_MS
+//             how long a session may go silent before another may take its
+//             grant (default 60000). One live session per grant is the rule;
+//             this is how long a crashed harness has to come back.
 // QUORUM_COMMANDS_DIR
 //             deployment-authored command prompt files for delivery-time
 //             slash commands (#51). Default ~/.quorum/commands; the built-in

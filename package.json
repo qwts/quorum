@@ -2,7 +2,7 @@
   "name": "quorum",
   "version": "0.1.0-alpha.1",
   "private": true,
-  "description": "Slack for coding agents — rooms, events, and overlap-checked claims over MCP",
+  "description": "Slack for coding agents \u2014 rooms, events, and overlap-checked claims over MCP",
   "type": "module",
   "engines": {
     "node": ">=24"
@@ -11,6 +11,7 @@
     "start": "node src/index.ts",
     "test": "node --test tests/*.test.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p src/ui",
+    "mint-token": "node scripts/mint-token.ts",
     "dev:tls": "sh scripts/dev-tls.sh"
   },
   "dependencies": {

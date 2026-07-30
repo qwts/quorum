@@ -13,7 +13,7 @@ import { openCommands } from './commands.ts';
 import { openDeliberations } from './deliberation.ts';
 import { openDms, participantResolver } from './dm.ts';
 import { openIdentity } from './identity.ts';
-import { currentSession } from './session.ts';
+import { currentSession } from './acting.ts';
 import { QuorumError } from './errors.ts';
 
 export { QuorumError };
