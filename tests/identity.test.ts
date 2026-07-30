@@ -97,14 +97,18 @@ test('revoking a grant ends the session on it, and revoking a principal takes ev
   assert.deepEqual(killed.sessions, [sessionId], 'the live session went with the credential');
   assert.equal(quorum.identity.touch(sessionId), false, 'and cannot be spoken through afterwards');
   const after = quorum.identity.verify(first.token);
-  assert.match(after.ok === false ? after.refusal : '', /revoked/);
+  assert.match(after.ok === false ? after.refusal : '', /token has been revoked/);
   assert.equal(quorum.identity.verify(second.token).ok, true, 'the other credential is untouched, so far');
 
   const cascade = quorum.identity.revokePrincipal('ada:revoke');
   assert.ok(cascade.grants.includes(second.grant.id), 'revoking the principal reaches down the tree');
   const done = quorum.identity.verify(second.token);
   assert.equal(done.ok, false);
-  assert.match(done.ok === false ? done.refusal : '', /revoked/);
+  assert.match(
+    done.ok === false ? done.refusal : '',
+    /identity has been revoked/,
+    'the refusal names the highest revoked node, not the leaf — "token revoked" would invite minting a replacement that cannot exist',
+  );
   // The identity itself is gone, not just its credentials: a revoked agent
   // cannot be handed a fresh token under the same name (design §5.1).
   assert.throws(() => quorum.identity.mint({ name: 'ada:revoke' }), /revoked/);

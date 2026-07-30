@@ -49,8 +49,12 @@ export function sessionGraceMs(env: NodeJS.ProcessEnv = process.env): number {
 export function bearerToken(req: IncomingMessage): string | null {
   const header = req.headers.authorization;
   if (typeof header !== 'string') return null;
-  const match = /^bearer[ \t]+(.+)$/i.exec(header.trim());
-  return match ? match[1]!.trim() : null;
+  // Linear-time on purpose (CodeQL): scheme test, then a plain slice — a
+  // crafted header full of tabs must not make a backtracking regex crawl.
+  const trimmed = header.trim();
+  if (!/^bearer[ \t]/i.test(trimmed)) return null;
+  const token = trimmed.slice('bearer'.length).trim();
+  return token === '' ? null : token;
 }
 
 /** Who a request is, once its credential has been believed. */

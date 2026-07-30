@@ -13,7 +13,7 @@
 // cascades down the tree. OAuth (Phase 2) and human OIDC (Phase 3) land on
 // these same tables rather than replacing them.
 
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { QuorumError } from './errors.ts';
 import { openSessions, type Deps, type Refused } from './session.ts';
 import { openTree, type Grant, type Principal } from './tree.ts';
@@ -115,37 +115,34 @@ export function openIdentity(deps: Deps) {
       if (!token.startsWith(TOKEN_PREFIX)) {
         return { ok: false, refusal: `that credential is not a quorum access token — they begin ${TOKEN_PREFIX}` };
       }
-      const digest = digestOf(token);
-      const rows = db
+      // One indexed lookup by the token's digest. The key is a SHA-256 of
+      // the secret, never the secret: index timing can only leak facts about
+      // the digest, which reveals nothing usable about the token — so a
+      // constant-time scan of every grant bought no security for its O(n).
+      const found = (db
         .prepare(
           `SELECT g.*, p.account_id, p.name AS principal_name, p.revoked_at AS principal_revoked,
                   a.revoked_at AS account_revoked
            FROM grants g
            JOIN principals p ON p.id = g.principal_id
-           JOIN accounts a ON a.id = p.account_id`,
+           JOIN accounts a ON a.id = p.account_id
+           WHERE g.token_hash = ?`,
         )
-        .all() as GrantRow[];
-      // Compared in constant time, and the loop runs to the end whatever it
-      // finds: a byte-wise compare that returns on the first difference, or a
-      // scan that stops at the first hit, takes measurably longer for a near
-      // miss than for a wrong guess. Cheap discipline, and a small number of
-      // grants is not a reason to skip it.
-      let found: GrantRow | null = null;
-      for (const row of rows) {
-        const stored = Buffer.from(row.token_hash, 'hex');
-        if (stored.length === digest.length && timingSafeEqual(stored, digest)) found = row;
-      }
+        .get(digestOf(token).toString('hex')) ?? null) as GrantRow | null;
       // None of the refusals below repeats the token back. A credential that
       // reaches a log, a transcript, or a model's context is a credential to
       // rotate, and an error message is the easiest way for one to get there.
       if (found === null) return { ok: false, refusal: 'that token is not one this server issued' };
-      if (found.revoked_at !== null) return { ok: false, refusal: 'that token has been revoked' };
-      if (found.principal_revoked !== null) return { ok: false, refusal: 'that agent identity has been revoked' };
-      // Revocation cascades (§2), so the root's ban is checked here rather
-      // than swept through every grant beneath it.
+      // Root-first, so the refusal names the highest revoked node: "that
+      // token has been revoked" invites minting a replacement, which is the
+      // wrong errand when the identity or its sponsor is gone. Revocation
+      // cascades (§2), so the root's ban is checked here rather than swept
+      // through every grant beneath it.
       if (found.account_revoked !== null) {
         return { ok: false, refusal: 'the account that sponsored that token is revoked' };
       }
+      if (found.principal_revoked !== null) return { ok: false, refusal: 'that agent identity has been revoked' };
+      if (found.revoked_at !== null) return { ok: false, refusal: 'that token has been revoked' };
       if (found.expires_at !== null && found.expires_at <= now()) {
         return { ok: false, refusal: 'that token has expired' };
       }

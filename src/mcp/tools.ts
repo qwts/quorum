@@ -379,14 +379,16 @@ export async function callTool(
         repo: str(args, 'repo'),
         branch: str(args, 'branch'),
       });
-      session.participantId = participant.id;
       // Bind the roster row to the identity that authenticated (ADR-0001): a
       // name under auth is claimed by a credential, not asserted. The domain
       // refuses a row that already belongs to another principal, so this is
-      // also where wearing someone else's name stops.
+      // also where wearing someone else's name stops — and it happens before
+      // the session is marked identified, or the refusal would leave this
+      // session speaking as the very participant it was refused (#72 review).
       if (session.principalId !== null) {
         quorum.identity.bindParticipant({ participantId: participant.id, principalId: session.principalId });
       }
+      session.participantId = participant.id;
       // Asserted provenance, recorded on the session as data and read by
       // nothing that decides anything (§4.1). The design doc spells these
       // camelCase; this surface is snake_case throughout and takes either.

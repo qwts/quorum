@@ -9,6 +9,7 @@
 // One rule runs through every assertion below: a refusal says what is missing
 // and what to do about it, and never repeats the credential it was handed.
 
+const PRIOR_ENV = { auth: process.env.QUORUM_AUTH, grace: process.env.QUORUM_SESSION_GRACE_MS };
 process.env.QUORUM_AUTH = '1';
 process.env.QUORUM_SESSION_GRACE_MS = '60000';
 
@@ -34,6 +35,12 @@ after(async () => {
   for (const client of clients) await client.close().catch(() => {});
   await server.close();
   quorum.close();
+  // Restored so the switch cannot leak into another test file, should the
+  // runner ever share a process between them.
+  if (PRIOR_ENV.auth === undefined) delete process.env.QUORUM_AUTH;
+  else process.env.QUORUM_AUTH = PRIOR_ENV.auth;
+  if (PRIOR_ENV.grace === undefined) delete process.env.QUORUM_SESSION_GRACE_MS;
+  else process.env.QUORUM_SESSION_GRACE_MS = PRIOR_ENV.grace;
 });
 
 const mint = (name: string, ttlMs?: number | null) => quorum.identity.mint({ name, ttlMs });
@@ -250,4 +257,40 @@ test('nothing the server records or answers with carries a token', () => {
   assert.doesNotMatch(feed, /qpat_/, 'the feed names grants and sessions, never secrets');
   const grants = JSON.stringify(quorum.identity.listGrants());
   assert.doesNotMatch(grants, /qpat_/, 'and neither does the operator listing');
+});
+
+test('the refusal is a real 401 with the standard challenge, not just words', async () => {
+  // The SDK client surfaces the refusal as text; this pins the wire shape a
+  // spec-conformant client actually dispatches on — the status code and the
+  // WWW-Authenticate challenge — so neither can quietly disappear.
+  const raw = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
+  });
+  assert.equal(raw.status, 401);
+  assert.match(String(raw.headers.get('www-authenticate')), /^Bearer realm=/);
+  await raw.text();
+});
+
+test('a clean disconnect frees the grant at once, without waiting out the grace window', async () => {
+  const minted = mint('agent:goodbye');
+  const transport = new StreamableHTTPClientTransport(new URL(url), {
+    requestInit: { headers: { authorization: `Bearer ${minted.token}` } },
+  });
+  const client = new Client({ name: 'test-agent', version: '0.0.0' });
+  await client.connect(transport);
+  const first = await call(client, 'identify', { name: 'agent:goodbye', harness: 'claude-code' });
+  assert.equal(first.isError, undefined);
+
+  // Streamable HTTP has no standing connection whose loss the server could
+  // notice: only the explicit DELETE says goodbye, and client.close() alone
+  // leaves the session live — that silence is what the grace window is for.
+  await transport.terminateSession();
+  await client.close();
+
+  const again = await connect(minted.token);
+  const resumed = await call(again, 'identify', { name: 'agent:goodbye', harness: 'claude-code' });
+  assert.equal(resumed.isError, undefined, 'the same credential opens its next session immediately');
+  assert.equal(resumed.structuredContent?.resumed, true, 'and resumes the same participant');
 });

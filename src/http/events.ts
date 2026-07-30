@@ -152,6 +152,17 @@ export function serveEvents(req: IncomingMessage, res: ServerResponse, url: URL,
   void (async () => {
     let idleMs = 0;
     while (open) {
+      // Re-checked every slice, not once at open (#72 review): a stream is a
+      // long-lived read, and a grant revoked mid-stream must close it rather
+      // than ride the socket past the ban. Costs nothing while enforcement
+      // is off — refuseView returns at once — and while it is on, the same
+      // call touches the session, so a quiet watcher is not superseded for
+      // its silence.
+      const lapsed = refuseView(req, quorum, viewer);
+      if (lapsed !== null) {
+        res.write(frame(cursor, 'stream_error', { error: lapsed }));
+        break;
+      }
       let batch;
       try {
         batch = await quorum.waitForEvents({ afterSeq: cursor, timeoutMs: SLICE_MS, participantId: null, viewerId: viewer });
