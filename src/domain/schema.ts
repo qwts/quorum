@@ -154,7 +154,10 @@ CREATE TABLE IF NOT EXISTS accounts (
   name       TEXT NOT NULL,
   provider   TEXT,            -- OIDC issuer, once humans sign in (design §5)
   subject    TEXT,            -- that provider's subject for this human
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  -- Banning the root cascades to every derivation and forecloses future
+  -- sponsorship (design §5.1): moderation targets the depth where the fault is.
+  revoked_at INTEGER
 );
 
 -- An agent identity. Sponsored, never self-registered (design §5): it exists

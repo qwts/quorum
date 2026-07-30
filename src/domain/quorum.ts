@@ -134,6 +134,7 @@ export function openQuorum(options: QuorumOptions = {}) {
   addColumn('participants', 'status_at', 'INTEGER');
   addColumn('participants', 'principal_id', 'TEXT REFERENCES principals(id)');
   addColumn('events', 'session_id', 'TEXT');
+  addColumn('accounts', 'revoked_at', 'INTEGER');
 
   // Everyone blocked in wait_for_events. Appending an event wakes them all;
   // each re-reads from its own cursor, so there is no per-waiter bookkeeping.

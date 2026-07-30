@@ -104,7 +104,10 @@ test('revoking a grant ends the session on it, and revoking a principal takes ev
   assert.ok(cascade.grants.includes(second.grant.id), 'revoking the principal reaches down the tree');
   const done = quorum.identity.verify(second.token);
   assert.equal(done.ok, false);
-  assert.match(done.ok === false ? done.refusal : '', /identity has been revoked/);
+  assert.match(done.ok === false ? done.refusal : '', /revoked/);
+  // The identity itself is gone, not just its credentials: a revoked agent
+  // cannot be handed a fresh token under the same name (design §5.1).
+  assert.throws(() => quorum.identity.mint({ name: 'ada:revoke' }), /revoked/);
   quorum.close();
 });
 
@@ -241,7 +244,10 @@ test('an action carries the session that took it, and the clock\'s events carry 
   }
 
   // The lease expires on its own: nobody acted, so no session did either.
+  // Expiry is read-time (quorum.ts sweepExpired), so asking what is live is
+  // what makes the clock's event exist.
   tick(2_000);
+  quorum.listClaims();
   const swept = quorum.readEvents({ afterSeq: mine[mine.length - 1]!.seq });
   const expiry = swept.find((event) => event.kind === 'claim_expired');
   assert.ok(expiry, 'the sweep announced it');
