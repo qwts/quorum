@@ -100,8 +100,6 @@ export interface ProposalOption {
   option: string;
   count?: number;
   total?: number;
-  /** True during voting: the option is listed, the tally is not. */
-  hidden?: boolean;
 }
 
 /** The head of a live deliberation. Dispatches `action` and `select`. */
