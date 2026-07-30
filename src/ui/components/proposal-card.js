@@ -21,7 +21,7 @@ export class ProposalCard extends QuorumElement {
     'selectedOption', 'actionLabel', 'compact', 'selectable',
   ];
 
-  /** `[{ option, count?, total?, hidden? }]` — `hidden` conceals the tally, never the label. */
+  /** `[{ option, count?, total? }]` — the phase conceals the tally, never the label. */
   static data = ['options'];
 
   static styles = `

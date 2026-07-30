@@ -65,13 +65,13 @@ test('every delta from the shipped design carries a reason', () => {
   );
 });
 
-test('a hidden option hides its tally and never its label', () => {
-  // You cannot cast a ballot for a choice you cannot read. Two options that
-  // both render as "hidden" are not a ballot, they are a coin toss — and the
-  // failure looks deliberate, because concealment during voting *is* the
-  // design. Screenshot 04 is the arbiter: both options named, no counts.
+test('the phase conceals an option\'s tally and never its label', () => {
+  // You cannot cast a ballot for a choice you cannot read. An option with no
+  // tally at all is a coin toss, not a ballot — and the failure looks
+  // deliberate, because concealment during voting *is* the design.
+  // Screenshot 04 is the arbiter: both options named, no counts (Q10, #19).
   const options = [
-    { option: 'Add version field now', count: 3, total: 4, hidden: true },
+    { option: 'Add version field now', count: 3, total: 4 },
     { option: 'Defer to v1', count: 1, total: 4 },
   ];
 
@@ -85,18 +85,19 @@ test('a hidden option hides its tally and never its label', () => {
     }
   }
 
-  // Voting conceals every tally, whatever the option says.
+  // Voting conceals every tally.
   for (const option of options) {
     assert.deepEqual(optionChipProps(option, 'voting'), { option: option.option, count: null, total: null });
   }
 
-  // After close the tally is the record; `hidden` still suppresses its own.
-  assert.deepEqual(optionChipProps(options[1]!, 'converged'), {
-    option: 'Defer to v1',
-    count: 1,
-    total: 4,
-  });
-  assert.equal(optionChipProps(options[0]!, 'converged').count, null, '`hidden` suppresses this option`s tally');
+  // After close the tally is the record.
+  for (const option of options) {
+    assert.deepEqual(optionChipProps(option, 'converged'), {
+      option: option.option,
+      count: option.count,
+      total: option.total,
+    });
+  }
 });
 
 test('screen code contains no literal colour, size or duration', () => {

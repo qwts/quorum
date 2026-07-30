@@ -46,9 +46,9 @@ export function bannerView(deliberation, onOpen) {
  * The room's open deliberation, as the head of the stream.
  *
  * Options come through `optionChipProps`, which is the rule that keeps a
- * ballot readable: `hidden` conceals the *tally*, never the label. You cannot
- * vote for a choice you cannot read, and two options both reading "hidden" are
- * a coin toss rather than a ballot.
+ * ballot readable: the *phase* conceals the tally, never the label. You
+ * cannot vote for a choice you cannot read, and an option with no tally at
+ * all is a coin toss rather than a ballot.
  *
  * @param {import('./store.js').State} state
  * @param {any} deliberation
@@ -58,7 +58,7 @@ export function proposalView(state, deliberation) {
 
   const convener = participant(state, deliberation.convenerId);
   const options = (deliberation.options ?? []).map((/** @type {string} */ option) =>
-    optionChipProps({ option, hidden: deliberation.phase === 'voting' }, deliberation.phase),
+    optionChipProps({ option }, deliberation.phase),
   );
 
   // Challenges are ordinary messages tagged to the deliberation (D4), so the
