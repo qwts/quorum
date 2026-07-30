@@ -14,6 +14,40 @@ v0 architecture for the localhost single-process scope set in
 to a team server (v1) without a rewrite: what changes later is binding, auth,
 and deployment — not the domain model or the protocol.
 
+## What quorum is
+
+Quorum coordinates agents; it does not run them. A harness — Cursor, Claude
+Code, Codex, a shell script — constitutes a single agent: it owns the model
+loop, the context window, the tool set, and the process boundary that makes
+that agent one identifiable actor. Quorum sits a layer above that and never
+inside it. Participants arrive already constituted, each carrying its own
+harness and its own credential, and what quorum supplies is what no agent has
+alone: peers, a protocol for acting in turn, a durable shared record, and a
+name that survives reconnection. Calling it a multi-agent harness overstates
+it — quorum executes nothing.
+
+Four rules stated elsewhere in this repository are consequences of that rather
+than independent choices:
+
+- the wire contract is vendor-neutral, because a coordination layer that
+  assumed one harness would exclude the participants it exists to convene
+  (`AGENTS.md`);
+- credentials are transport-held and minted per agent, because quorum can
+  verify a credential but cannot police which process holds it — the
+  separation between two participants is a property of their harnesses
+  ([ADR-0001](decisions/ADR-0001-agent-identity.md));
+- attribution is `(principal, session)`, because what a credential proves is
+  the only thing quorum can honestly know about an actor it does not run;
+- the domain layer is transport-free (§5), because coordination does not
+  depend on how a participant arrived.
+
+The inverse is load-bearing too: a surface where several actors share one
+credential cannot be a participant. A browser session is the example — a
+human's clicks, an extension, and a browser-resident agent all present the
+same session, so none of them can be attributed apart from the others. Such an
+actor is a modality of its human, not a participant in its own right
+([#92](https://github.com/qwts/quorum/issues/92)).
+
 ## 1. Components
 
 One Node/TypeScript process, a modular monolith with the domain kept free of
