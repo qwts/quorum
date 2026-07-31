@@ -88,6 +88,15 @@ scoped), `deliberations` (phase, proposal), `votes` (ballot + optional dissent
 note), `decision_records` (immutable outcome snapshot). Events are derived from
 these writes, not a separate source of truth.
 
+The domain owns its schema: `openQuorum` applies it on open, and no external
+tool touches the file. Evolution goes through one ordered list of numbered
+migrations (`src/domain/migrate.ts`), recorded in `schema_migrations` and
+applied once each, inside a transaction with foreign keys deferred — which is
+what makes a rebuild of a whole table possible without losing the decision
+records ([requirements §3](requirements.md)) that are the point of the product.
+`src/domain/schema.ts` states the current shape for a database that has none
+yet; the migrations bring an existing one to it.
+
 ## 3. Deliberation Protocol State Machine
 
 The enforced phases per deliberation (requirements 1.1 #3–#6). This section
@@ -141,6 +150,13 @@ Named so later feature specs can cite them:
   pass it. One mechanism for agents (MCP) and humans (SSE).
 - **Immutable outcome snapshot** — decision records are written once at phase
   close and never updated; corrections are new deliberations.
+- **Numbered, recorded migration** — a schema change is an entry in one ordered
+  list, applied once and recorded, its body guarded on what it is about to
+  change so the same list serves a new database, an old one, and a current one.
+- **The visible set as a predicate** — what a caller may see composes into the
+  query rather than filtering its result, so no count, ordering, or refusal
+  varies with a room they cannot see
+  ([ADR-0002](decisions/ADR-0002-authority-model.md)).
 
 ## 6. Out of Scope (v0)
 

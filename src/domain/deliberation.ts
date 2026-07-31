@@ -67,7 +67,10 @@ export type Deps = {
     actorId: string | null,
   ) => void;
   requireParticipant: (id: string) => Participant;
-  requireRoom: (id: string) => Room;
+  /** A caller's reference, resolved inside that caller's visible set (ADR-0002 §6). */
+  requireRoom: (ref: string, viewer?: string | null) => Room;
+  /** An id this server stored — a deliberation's own room — resolved unscoped. */
+  roomById: (id: string) => Room;
   isMember: (roomId: string, participantId: string) => boolean;
 };
 
@@ -109,7 +112,7 @@ type BallotRow = {
 };
 
 export function openDeliberations(deps: Deps) {
-  const { db, now, appendEvent, requireParticipant, requireRoom, isMember } = deps;
+  const { db, now, appendEvent, requireParticipant, requireRoom, roomById, isMember } = deps;
 
   function toDeliberation(row: DeliberationRow): Deliberation {
     return {
@@ -211,7 +214,7 @@ export function openDeliberations(deps: Deps) {
   function close(row: DeliberationRow, actorId: string | null): void {
     const options = JSON.parse(row.options) as string[];
     const eligible = JSON.parse(row.eligible) as string[];
-    const room = requireRoom(row.room_id);
+    const room = roomById(row.room_id);
     const ballots = ballotsFor(row.id);
     const tally = tallyOf(options, ballots);
     const result = computeOutcome(room.decisionRule, options, eligible, ballots);
@@ -342,7 +345,7 @@ export function openDeliberations(deps: Deps) {
     }): Deliberation {
       sweep();
       const convener = requireParticipant(input.participantId);
-      const room = requireRoom(input.room);
+      const room = requireRoom(input.room, convener.id);
       if (!isMember(room.id, convener.id)) {
         throw new QuorumError(`join ${JSON.stringify(room.name)} before proposing in it`);
       }
@@ -480,7 +483,7 @@ export function openDeliberations(deps: Deps) {
     getDeliberation(input: { deliberationId: string }): DeliberationView {
       sweep();
       const row = requireDeliberation(input.deliberationId);
-      const room = requireRoom(row.room_id);
+      const room = roomById(row.room_id);
       return {
         ...toDeliberation(row),
         rule: room.decisionRule,
@@ -493,9 +496,9 @@ export function openDeliberations(deps: Deps) {
     // because propose refuses many things but not a second live deliberation
     // in a room; soonest deadline first, because that is the phase a late
     // arrival has the least time left to meet.
-    listOpenDeliberations(input: { room: string }): DeliberationView[] {
+    listOpenDeliberations(input: { room: string; viewerId?: string | null }): DeliberationView[] {
       sweep();
-      const room = requireRoom(input.room);
+      const room = requireRoom(input.room, input.viewerId ?? null);
       const rows = db
         .prepare(
           "SELECT * FROM deliberations WHERE room_id = ? AND phase IN ('challenging','voting') ORDER BY phase_ends_at",
@@ -508,9 +511,9 @@ export function openDeliberations(deps: Deps) {
       }));
     },
 
-    listDecisions(input: { room?: string } = {}): DecisionSummary[] {
+    listDecisions(input: { room?: string; viewerId?: string | null } = {}): DecisionSummary[] {
       sweep();
-      const roomId = input.room ? requireRoom(input.room).id : null;
+      const roomId = input.room ? requireRoom(input.room, input.viewerId ?? null).id : null;
       const rows = (
         roomId
           ? db.prepare('SELECT * FROM decisions WHERE room_id = ? ORDER BY closed_at DESC').all(roomId)

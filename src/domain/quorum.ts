@@ -7,6 +7,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { SCHEMA } from './schema.ts';
+import { migrate } from './migrate.ts';
+import { requireVisibleRoom, roomById, toRoom, visibleNameTaken, VISIBLE_ROOMS, type RoomRow } from './authority.ts';
 import { normalizePatterns, PatternError, scopesOverlap } from './glob.ts';
 import { openCommandGuidance } from './command-guidance.ts';
 import { openCommands } from './commands.ts';
@@ -36,7 +38,15 @@ export type Room = {
   topic: string | null;
   decisionRule: DecisionRule;
   createdBy: string;
+  /**
+   * The visibility tier (ADR-0002 §6). Every room is `public` until #82 gives
+   * anyone a way to set it; what it already does is scope name uniqueness and
+   * name resolution, which had to change before a tier could exist at all.
+   */
+  visibility: RoomVisibility;
 };
+
+export type RoomVisibility = 'public' | 'private' | 'exclusive';
 
 export type Message = {
   id: number;
@@ -111,30 +121,18 @@ export function openQuorum(options: QuorumOptions = {}) {
   const now = options.now ?? (() => Date.now());
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA foreign_keys = ON');
-  db.exec(SCHEMA);
 
+  // The schema someone already has is rarely the schema this version wants:
   // CREATE TABLE IF NOT EXISTS does nothing to a table that already exists, so
-  // a column added after someone started using quorum never arrives and the
-  // next write fails with `table events has no column named …`. Additive
-  // migrations run here, on open, in order. v0 only ever adds nullable
-  // columns; anything that needs a rewrite gets a real migration story before
-  // it lands, not after someone's database refuses to start.
-  const addColumn = (table: string, column: string, declaration: string): void => {
-    const present = (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(
-      (row) => row.name === column,
-    );
-    if (!present) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${declaration}`);
-  };
-  addColumn('events', 'actor_id', 'TEXT');
-  addColumn('participants', 'cursor', 'INTEGER NOT NULL DEFAULT 0');
-  addColumn('messages', 'deliberation_id', 'TEXT');
-  addColumn('events', 'audience', 'TEXT');
-  addColumn('participants', 'status', 'TEXT');
-  addColumn('participants', 'status_kind', 'TEXT');
-  addColumn('participants', 'status_at', 'INTEGER');
-  addColumn('participants', 'principal_id', 'TEXT REFERENCES principals(id)');
-  addColumn('events', 'session_id', 'TEXT');
-  addColumn('accounts', 'revoked_at', 'INTEGER');
+  // a change shipped after they started using quorum never arrives and the next
+  // write fails with `table events has no column named …`. Migrations run
+  // first, numbered and recorded and applied once each
+  // (src/domain/migrate.ts), and bring an existing database up to the shape
+  // the statements below assume. SCHEMA then creates whatever a new database
+  // still lacks — on a new one the migrations found nothing to do, because
+  // SCHEMA is already their result.
+  migrate(db, now);
+  db.exec(SCHEMA);
 
   // Everyone blocked in wait_for_events. Appending an event wakes them all;
   // each re-reads from its own cursor, so there is no per-waiter bookkeeping.
@@ -236,18 +234,13 @@ export function openQuorum(options: QuorumOptions = {}) {
     );
   }
 
-  function requireRoom(id: string): Room {
-    const row = db.prepare('SELECT * FROM rooms WHERE id = ? OR name = ?').get(id, id) as
-      | { id: string; name: string; topic: string | null; decision_rule: string; created_by: string }
-      | undefined;
-    if (!row) throw new QuorumError(`unknown room: ${JSON.stringify(id)}`);
-    return {
-      id: row.id,
-      name: row.name,
-      topic: row.topic,
-      decisionRule: row.decision_rule as DecisionRule,
-      createdBy: row.created_by,
-    };
+  // A caller's room reference, resolved inside that caller's visible set
+  // (ADR-0002 §6). `viewer` defaults to null — the stranger's view — so a path
+  // that has a caller and forgets to pass it refuses rather than leaks. Where
+  // the id came from a row this server stored rather than from a caller, use
+  // roomById: the row's existence is already the proof of reach.
+  function requireRoom(ref: string, viewer: string | null = null): Room {
+    return requireVisibleRoom(db, ref, viewer);
   }
 
   // Expiry is computed, never swept by a timer (the Overlap-checked lease
@@ -380,7 +373,15 @@ export function openQuorum(options: QuorumOptions = {}) {
 
   // The deliberation protocol composes over the same db and feed; the Deps
   // object is the entire seam (docs/deliberation.md §8).
-  const deliberations = openDeliberations({ db, now, appendEvent, requireParticipant, requireRoom, isMember });
+  const deliberations = openDeliberations({
+    db,
+    now,
+    appendEvent,
+    requireParticipant,
+    requireRoom,
+    roomById: (id) => roomById(db, id),
+    isMember,
+  });
 
   // Direct messages compose the same way; their events are audience-scoped
   // through the appendEvent they are handed (docs/deliberation.md §8 seams).
@@ -470,7 +471,12 @@ export function openQuorum(options: QuorumOptions = {}) {
       if (rule !== 'majority' && rule !== 'unanimity') {
         throw new QuorumError("decision_rule must be 'majority' or 'unanimity'");
       }
-      if (db.prepare('SELECT id FROM rooms WHERE name = ?').get(name)) {
+      // Caller-scoped: a collision the creator cannot see is never reported to
+      // them, because the report is the disclosure the exclusive tier exists to
+      // prevent (ADR-0002 §6). The partial index still refuses the write when
+      // both rooms would be listed — the pre-check is for the message, not for
+      // the guarantee.
+      if (visibleNameTaken(db, name, creator.id)) {
         throw new QuorumError(`room already exists: ${JSON.stringify(name)}`);
       }
       const room: Room = {
@@ -479,10 +485,11 @@ export function openQuorum(options: QuorumOptions = {}) {
         topic: input.topic?.trim() || null,
         decisionRule: rule,
         createdBy: creator.id,
+        visibility: 'public',
       };
       db.prepare(
-        'INSERT INTO rooms (id, name, topic, decision_rule, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-      ).run(room.id, room.name, room.topic, room.decisionRule, room.createdBy, now());
+        'INSERT INTO rooms (id, name, topic, decision_rule, created_by, created_at, visibility) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      ).run(room.id, room.name, room.topic, room.decisionRule, room.createdBy, now(), room.visibility);
       db.prepare('INSERT INTO room_members (room_id, participant_id, joined_at) VALUES (?, ?, ?)').run(
         room.id,
         creator.id,
@@ -492,41 +499,33 @@ export function openQuorum(options: QuorumOptions = {}) {
       return room;
     },
 
-    listRooms(): (Room & { members: number; memberIds: string[] })[] {
+    // `viewerId` is the visible set (ADR-0002 §6), composed into the query
+    // rather than filtered out of its result: a room outside it is not a row
+    // this caller was shown and then denied, it is a row their query never
+    // reached. Omitting it is the stranger's view.
+    listRooms(input: { viewerId?: string | null } = {}): (Room & { members: number; memberIds: string[] })[] {
       // Member ids ride along (#56) so one read paints occupants everywhere;
       // the count is derived from the list, never tracked beside it, and the
       // list comes from the one membership query below (issue requirement 3 —
       // a second SQL path is where the ordering drifted in review).
-      const rows = db.prepare('SELECT * FROM rooms ORDER BY created_at').all() as {
-        id: string;
-        name: string;
-        topic: string | null;
-        decision_rule: string;
-        created_by: string;
-      }[];
+      const rows = db
+        .prepare(`SELECT * FROM rooms WHERE ${VISIBLE_ROOMS} ORDER BY created_at`)
+        .all(input.viewerId ?? null) as RoomRow[];
       return rows.map((row) => {
         const memberIds = memberIdsOf(row.id);
-        return {
-          id: row.id,
-          name: row.name,
-          topic: row.topic,
-          decisionRule: row.decision_rule as DecisionRule,
-          createdBy: row.created_by,
-          members: memberIds.length,
-          memberIds,
-        };
+        return { ...toRoom(row), members: memberIds.length, memberIds };
       });
     },
 
     // Who is in a room, in join order (#56): the /who command and the
     // occupants panel ask this one question, through the one query.
-    listMembers(input: { room: string }): Participant[] {
-      return memberIdsOf(requireRoom(input.room).id).map(requireParticipant);
+    listMembers(input: { room: string; viewerId?: string | null }): Participant[] {
+      return memberIdsOf(requireRoom(input.room, input.viewerId ?? null).id).map(requireParticipant);
     },
 
     joinRoom(input: { room: string; participantId: string }): Room {
       const participant = requireParticipant(input.participantId);
-      const room = requireRoom(input.room);
+      const room = requireRoom(input.room, participant.id);
       const already = db
         .prepare('SELECT 1 FROM room_members WHERE room_id = ? AND participant_id = ?')
         .get(room.id, participant.id);
@@ -543,7 +542,7 @@ export function openQuorum(options: QuorumOptions = {}) {
 
     postMessage(input: { room: string; participantId: string; body: string; deliberationId?: string }): Message {
       const participant = requireParticipant(input.participantId);
-      const room = requireRoom(input.room);
+      const room = requireRoom(input.room, participant.id);
       if (!isMember(room.id, participant.id)) {
         throw new QuorumError(`join ${JSON.stringify(room.name)} before posting to it`);
       }
@@ -572,8 +571,8 @@ export function openQuorum(options: QuorumOptions = {}) {
       return message;
     },
 
-    readMessages(input: { room: string; afterId?: number; limit?: number }): Message[] {
-      const room = requireRoom(input.room);
+    readMessages(input: { room: string; afterId?: number; limit?: number; viewerId?: string | null }): Message[] {
+      const room = requireRoom(input.room, input.viewerId ?? null);
       const limit = Math.min(Math.max(input.limit ?? 50, 1), 500);
       const rows = db
         .prepare('SELECT * FROM messages WHERE room_id = ? AND id > ? ORDER BY id LIMIT ?')
@@ -800,7 +799,10 @@ export function openQuorum(options: QuorumOptions = {}) {
     db, now, appendEvent, requireParticipant, requireRoom, isMember,
     resolveParticipant: participantResolver(db, requireParticipant),
     createRoom: (input) => api.createRoom(input),
-    listRooms: () => api.listRooms(),
+    // The commands always know who typed them, so every read they make is
+    // scoped to that caller's visible set — /list must not name a room its
+    // reader cannot see.
+    listRooms: (viewerId) => api.listRooms({ viewerId }),
     listMembers: (input) => api.listMembers(input),
     postMessage: (input) => api.postMessage(input),
   });

@@ -134,7 +134,7 @@ export function deliverEvents<E extends { seq: number; kind: string; payload: Re
     const from = event.payload.from;
     if (typeof message?.body !== 'string' || typeof from !== 'string') return event;
     if (FORGED_RULE.test(message.body)) return event;
-    roomNames ??= new Map(quorum.listRooms().map((room) => [room.id, room.name]));
+    roomNames ??= new Map(quorum.listRooms({ viewerId: recipientId }).map((room) => [room.id, room.name]));
     const footer = quorum.deliveryGuidance({
       body: message.body,
       from,

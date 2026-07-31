@@ -439,6 +439,14 @@ already reserves the answer: anything needing a rewrite gets a real migration
 story before it lands, not after someone's database refuses to start. This is
 the first change in the repo that needs one.
 
+**Landed in [#96](https://github.com/qwts/quorum/issues/96)**, and as a
+mechanism rather than a script: `src/domain/migrate.ts` is one ordered list of
+numbered migrations recorded in `schema_migrations`, and the rebuild is entry
+2. The `visibility` column, the `rooms_listed_name` index, and the
+caller-scoped `createRoom` and `requireRoom` came with it, so every path that
+resolves a room name already behaves as though tiers existed. What #82 adds is
+the way to set one — and the reads beyond room resolution that §6 still filters.
+
 ## 7. The no-inference rule
 
 The open question this document must answer rather than assume: a naive
@@ -581,8 +589,16 @@ things, and they must be the same two everywhere:
 - `visibleRooms(caller)` — the visible set of §6, as a SQL predicate that the
   room, message, member, deliberation, decision, and event reads compose into
   their own queries. A predicate rather than a post-filter is what makes §7's
-  "computed over, not filtered after" true mechanically.
+  "computed over, not filtered after" true mechanically. Landed in #96 as
+  `VISIBLE_ROOMS`, with the room resolution and the name refusals of §6.1
+  beside it.
 - `may(caller, capability, scope)` — the capability matrix of §5.
+
+One property of the #96 seam is worth keeping as the rest is built on it: every
+entry point takes the viewer as `string | null`, and null is the stranger's
+view. A read surface that forgets to thread its caller through therefore
+refuses where it should have resolved — a bug someone reports, rather than a
+leak nobody sees.
 
 The order inside `may` is fixed, and it is a security property rather than a
 style choice: **visibility first, capability second.** A room outside the
@@ -622,7 +638,7 @@ one a nonexistent room gets (§7, corollary 3).
 
 | Seam | Today | Under this design |
 |------|-------|-------------------|
-| `src/domain/schema.ts` `rooms` | `name TEXT NOT NULL UNIQUE`; creator in `created_by` | `visibility`, `owner_account_id`, `archived_at`; uniqueness partial to public rooms (§6.2) |
+| `src/domain/schema.ts` `rooms` | `name TEXT NOT NULL UNIQUE`; creator in `created_by` | `visibility`, `owner_account_id`, `archived_at`; uniqueness partial to the *listed* tiers — `rooms_listed_name … WHERE visibility <> 'exclusive'`, not public alone (§6.2) |
 | `src/domain/schema.ts` `room_members` | `(room_id, participant_id, joined_at)` | adds `role` and per-room capability overrides; invites and holds are rows with events |
 | `src/domain/authority.ts` | — | the one gate: `visibleRooms`, `may`, and the refusal text (§9.1) |
 | `grants.scopes` | one word, `participant` | ladder scopes: `admin`, `moderator:instance`, `moderator:room:<id>` |

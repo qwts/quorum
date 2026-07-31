@@ -450,7 +450,9 @@ export async function callTool(
     }
 
     case 'list_rooms': {
-      const rooms = quorum.listRooms();
+      // The caller's visible set, not the instance's (ADR-0002 §6): a room
+      // this session cannot see is not listed to it, ever.
+      const rooms = quorum.listRooms({ viewerId: session.participantId });
       return {
         guidance:
           rooms.length === 0
@@ -496,6 +498,7 @@ export async function callTool(
         room: str(args, 'room') ?? '',
         afterId: num(args, 'after_id'),
         limit: num(args, 'limit'),
+        viewerId: session.participantId,
       });
       const last = messages.at(-1)?.id ?? num(args, 'after_id') ?? 0;
       // Delivery-time slash commands (#51): each copy is shaped for this
@@ -503,7 +506,10 @@ export async function callTool(
       // resolved against the reader's harness. The domain handed back the
       // plain messages it stores; the footer exists only on this transport.
       const roomArg = str(args, 'room') ?? '';
-      const roomName = quorum.listRooms().find((room) => room.id === roomArg || room.name === roomArg)?.name ?? roomArg;
+      const roomName =
+        quorum
+          .listRooms({ viewerId: session.participantId })
+          .find((room) => room.id === roomArg || room.name === roomArg)?.name ?? roomArg;
       const { delivered, footered } = deliverMessages(
         quorum,
         session.participantId,

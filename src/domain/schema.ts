@@ -36,15 +36,34 @@ CREATE UNIQUE INDEX IF NOT EXISTS participants_identity ON participants (name, h
 
 CREATE TABLE IF NOT EXISTS rooms (
   id            TEXT PRIMARY KEY,
-  name          TEXT NOT NULL UNIQUE,
+  -- Not UNIQUE: see rooms_listed_name below.
+  name          TEXT NOT NULL,
   topic         TEXT,
   -- Rooms are created with their decision rule (requirements 1.1 #5). Nothing
   -- enforces it until deliberations land; it is recorded now so the rule is a
   -- property of the room from the day the room exists.
   decision_rule TEXT NOT NULL,
   created_by    TEXT NOT NULL REFERENCES participants(id),
-  created_at    INTEGER NOT NULL
+  created_at    INTEGER NOT NULL,
+  -- The visibility tier (ADR-0002 §6). public and private are both listed to
+  -- everyone and differ in what a non-member may read; exclusive is invisible
+  -- to a non-member — no list entry, no count, no event, no refusal that
+  -- differs from a room that does not exist. Only the column and the
+  -- uniqueness rule that hangs off it land here (#96); what may set it, and
+  -- the reads it filters, are #82's. The CHECK fixes the vocabulary ADR-0002
+  -- fixed; a fourth tier would be a migration, which this repo can now do.
+  visibility    TEXT NOT NULL DEFAULT 'public'
+    CHECK (visibility IN ('public', 'private', 'exclusive'))
 );
+
+-- Name uniqueness holds only among the rooms a caller can see (ADR-0002 §6,
+-- docs/design/authority.md §6.1). Global uniqueness would answer "that name is
+-- taken" for an exclusive room, and that answer is the disclosure the tier
+-- exists to prevent. Partial to the *listed* tiers, not to public alone:
+-- private rooms are listed by name to everyone too, so a collision between two
+-- of them would make a name ambiguous for every caller — under-enforcing where
+-- no tier needed the room.
+CREATE UNIQUE INDEX IF NOT EXISTS rooms_listed_name ON rooms (name) WHERE visibility <> 'exclusive';
 
 CREATE TABLE IF NOT EXISTS room_members (
   room_id        TEXT NOT NULL REFERENCES rooms(id),
@@ -58,7 +77,11 @@ CREATE TABLE IF NOT EXISTS messages (
   room_id        TEXT NOT NULL REFERENCES rooms(id),
   participant_id TEXT NOT NULL REFERENCES participants(id),
   body           TEXT NOT NULL,
-  created_at     INTEGER NOT NULL
+  created_at     INTEGER NOT NULL,
+  -- Set when the message is a challenge tagged to a deliberation (D4). The
+  -- tag is the whole relationship: deliberation state references messages and
+  -- never lives in them.
+  deliberation_id TEXT
 );
 CREATE INDEX IF NOT EXISTS messages_by_room ON messages (room_id, id);
 
@@ -219,6 +242,10 @@ CREATE TABLE IF NOT EXISTS events (
   -- audience-scoped: delivered only to those participants, invisible —
   -- content and existence both — to every other reader (issue #42, the
   -- precedent v1 authentication builds on).
-  audience   TEXT
+  audience   TEXT,
+  -- Which session acted (ADR-0001 §4.1). Attribution is to (principal,
+  -- session), never to a principal alone. NULL on an uncredentialed v0 call
+  -- and on anything the server did by itself.
+  session_id TEXT
 );
 `;
