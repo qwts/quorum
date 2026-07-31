@@ -45,8 +45,8 @@ const EXCEPTIONS: Record<string, { limit: number; why: string }> = {
     why: 'The command registry (#52): one entry per command is the design — adding a command touches only this file — so it grows with the vocabulary. Split when a category earns its own file, not before.',
   },
   'src/domain/quorum.ts': {
-    limit: 860,
-    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany. Grew the audience filter (#42), participant status and command composition (#52), the occupants read (#56), the shared claim-refusal record (#15), and identity (#50) — whose tables live in identity.ts, session.ts, and tree.ts, so what lands here is the composition plus the one line of appendEvent that stamps a session on an action, then delivery guidance (#51) — which must resolve recipients through the same requireParticipant. Held flat by #96, which moved the schema history to migrate.ts and room resolution to authority.ts as it added the visible-set scoping.',
+    limit: 880,
+    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany. Grew the audience filter (#42), participant status and command composition (#52), the occupants read (#56), the shared claim-refusal record (#15), and identity (#50) — whose tables live in identity.ts, session.ts, and tree.ts, so what lands here is the composition plus the one line of appendEvent that stamps a session on an action, then delivery guidance (#51) — which must resolve recipients through the same requireParticipant. Held flat by #96, which moved the schema history to migrate.ts and room resolution to authority.ts as it added the visible-set scoping. Presence (#17) is the same shape: the projection is presence.ts, and what lands here is the roster view, which has to be composed beside listParticipants to stay one read.',
   },
   'src/mcp/server.ts': {
     limit: 285,
@@ -57,8 +57,8 @@ const EXCEPTIONS: Record<string, { limit: number; why: string }> = {
     why: 'The protocol state machine. Its phases only make sense read together; the seams it does have are documented in docs/deliberation.md §8.',
   },
   'src/mcp/tools.ts': {
-    limit: 800,
-    why: 'Hand-written JSON Schema, which is verbose by choice — the wire contract is the product (AGENTS.md), so it reads as the contract it is rather than being generated. Ratcheted down when the DM family moved to dms.ts (#42); grew list_open_deliberations (#35), then identify\'s asserted provenance inputs (#50) — the contract for an input belongs beside the tool it is an input to, then the delivery footers (#51).',
+    limit: 855,
+    why: 'Hand-written JSON Schema, which is verbose by choice — the wire contract is the product (AGENTS.md), so it reads as the contract it is rather than being generated. Ratcheted down when the DM family moved to dms.ts (#42); grew list_open_deliberations (#35), then identify\'s asserted provenance inputs (#50) — the contract for an input belongs beside the tool it is an input to, then the delivery footers (#51), then the two presence clauses (#17), which belong beside the guidance they qualify: a file of their own would separate a sentence from the reply it is a sentence in.',
   },
 };
 

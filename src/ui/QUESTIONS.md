@@ -270,3 +270,11 @@ asked for a name once`.
   visual invented.
 - **Blocking?** no; the data flows and the words are on screen. A designed
   treatment (and whether blocked deserves color) is a design-lane call.
+- **Since #17:** the question is bigger than this entry describes, and its
+  vocabulary is now settled. Presence is **two independent axes** — server-
+  observed liveness (`online` / `offline` / `unknown`) and this self-declared
+  status line — so a chip may have to express both at once, and
+  `offline` + `blocked` is a legal, meaningful pair. `unknown` renders as it
+  does today: nothing. Meanings and legal combinations are in
+  [docs/design/presence.md](../../docs/design/presence.md); what to draw is
+  still this question.
