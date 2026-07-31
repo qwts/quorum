@@ -9,3 +9,4 @@ deleted or rewritten after acceptance; they are superseded.
 | ID | Title | Status |
 | --- | --- | --- |
 | [ADR-0001](ADR-0001-agent-identity.md) | Agent identity is a derivation tree with transport-held credentials | Accepted |
+| [ADR-0002](ADR-0002-authority-model.md) | Authority is scoped grants on the identity tree, and visibility is one table | Proposed |
