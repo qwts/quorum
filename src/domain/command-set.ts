@@ -35,12 +35,12 @@ export type Deps = {
     audience?: string[] | null,
   ) => void;
   requireParticipant: (id: string) => Participant;
-  requireRoom: (name: string) => Room;
+  requireRoom: (ref: string, viewer?: string | null) => Room;
   isMember: (roomId: string, participantId: string) => boolean;
   resolveParticipant: (ref: string) => Participant;
   createRoom: (input: { name: string; topic?: string; by: string }) => Room;
-  listRooms: () => (Room & { members: number })[];
-  listMembers: (input: { room: string }) => Participant[];
+  listRooms: (viewerId: string) => (Room & { members: number })[];
+  listMembers: (input: { room: string; viewerId?: string | null }) => Participant[];
   postMessage: (input: { room: string; participantId: string; body: string; deliberationId?: string }) => Message;
 };
 
@@ -148,8 +148,8 @@ export function buildRegistry(deps: Deps): Command[] {
       summary: 'every room, its topic, size and rule',
       usage: '/list',
       recorded: false,
-      run: () => {
-        const rooms = deps.listRooms();
+      run: ({ sender }) => {
+        const rooms = deps.listRooms(sender.id);
         if (rooms.length === 0) return 'No rooms yet — /room <name> creates one.';
         return rooms
           .map((r) => `#${r.name}${r.topic ? ` — ${r.topic}` : ''} · ${r.members} member${r.members === 1 ? '' : 's'} · rule: ${r.decisionRule}`)
@@ -230,9 +230,9 @@ export function buildRegistry(deps: Deps): Command[] {
       summary: 'who is in this room, in join order',
       usage: '/who',
       recorded: false,
-      run: ({ room }) => {
+      run: ({ sender, room }) => {
         const where = room();
-        const members = deps.listMembers({ room: where.name });
+        const members = deps.listMembers({ room: where.id, viewerId: sender.id });
         const lines = members.map(
           (p) =>
             `${p.name} (${p.harness})${p.status ? ` — ${p.status.kind === 'blocked' ? 'BLOCKED: ' : ''}${p.status.text}` : ''}`,

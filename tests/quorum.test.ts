@@ -460,7 +460,13 @@ test('a database made before a column existed still opens', () => {
     before.close();
 
     const raw = new DatabaseSync(path);
-    raw.exec('ALTER TABLE events DROP COLUMN actor_id'); // rewind to the older shape
+    // Rewind to the older shape — and to the older *ledger*, because a
+    // database from before the column is also a database from before the
+    // migration that added it. Dropping only the column would describe a
+    // database nobody has: one whose record says applied and whose schema
+    // says otherwise.
+    raw.exec('ALTER TABLE events DROP COLUMN actor_id');
+    raw.exec('DELETE FROM schema_migrations WHERE id = 1');
     raw.close();
 
     const after = openQuorum({ path });

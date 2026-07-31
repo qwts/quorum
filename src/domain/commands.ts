@@ -46,7 +46,9 @@ export function openCommands(deps: Deps) {
       const sender = requireParticipant(input.participantId);
       const args = (match![2] ?? '').trim();
       const recorded = typeof command.recorded === 'function' ? command.recorded(args) : command.recorded;
-      const room = () => requireRoom(input.room);
+      // Scoped to the sender: a command naming a room they cannot see is
+      // refused in the words a room that does not exist gets (ADR-0002 §6).
+      const room = () => requireRoom(input.room, sender.id);
       // An action is recorded, and recording requires membership — checked
       // before the action runs, so a refusal leaves nothing half-done.
       if (recorded && !isMember(room().id, sender.id)) {

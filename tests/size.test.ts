@@ -46,7 +46,7 @@ const EXCEPTIONS: Record<string, { limit: number; why: string }> = {
   },
   'src/domain/quorum.ts': {
     limit: 860,
-    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany. Grew the audience filter (#42), participant status and command composition (#52), the occupants read (#56), the shared claim-refusal record (#15), and identity (#50) — whose tables live in identity.ts, session.ts, and tree.ts, so what lands here is the composition plus the one line of appendEvent that stamps a session on an action, then delivery guidance (#51) — which must resolve recipients through the same requireParticipant.',
+    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany. Grew the audience filter (#42), participant status and command composition (#52), the occupants read (#56), the shared claim-refusal record (#15), and identity (#50) — whose tables live in identity.ts, session.ts, and tree.ts, so what lands here is the composition plus the one line of appendEvent that stamps a session on an action, then delivery guidance (#51) — which must resolve recipients through the same requireParticipant. Held flat by #96, which moved the schema history to migrate.ts and room resolution to authority.ts as it added the visible-set scoping.',
   },
   'src/mcp/server.ts': {
     limit: 285,
