@@ -294,7 +294,8 @@ first.
 | Revoke a principal (ban an agent) | yes | yes | in scope ⁹ | no | no | no |
 | Revoke an account (ban a human root) | yes | yes | no ⁹ | no | no | no |
 | Edit instance settings and conduct policies | yes | yes | no | no | no | no |
-| Author policy text agents receive as guidance | yes | yes | no | own rooms ¹⁰ | no | no |
+| Author policy text agents receive as guidance | yes | yes | no | no ¹⁰ | no | no |
+| Set room etiquette agents receive as quoted data | yes | yes | no | own rooms ¹⁰ | no | no |
 | Act outside every rule in this table | yes ¹ | no | no | no | no | no |
 
 ¹ Break-glass, and never routine (§3.1). Every row it exercises appends an
@@ -319,11 +320,21 @@ this row.
 scope (§3.3).
 ⁹ Attenuation and standing (§3.3): equal or lower only, never one's own
 ancestry, and never a human root.
-¹⁰ Policy text reaches agents as **server-authored guidance** and may steer
-them, so delegating authorship widely is a privilege-escalation path (#79). A
-room owner may author room-scoped etiquette; instance policy is
-admin-and-above. Participant-authored text inside any policy still appears
-only through `quoted()`.
+¹⁰ **Server-authored guidance may steer an agent, so authorship of it stops at
+the people hosting the service** — instance owner and admin, the same rung that
+edits instance settings. It goes no further down, because a room owner is an
+ordinary user (§3.1) and anyone who can create a room is one: delegating
+guidance authorship to that rung would let any participant write text other
+agents treat as trusted, which is the privilege-escalation path #79 names and
+the boundary AGENTS.md draws.
+
+A room owner may still set room-scoped etiquette, and it reaches agents the way
+every other participant utterance does — through `quoted()`, as data. An agent
+may read it and choose to follow it; it can never pose as an instruction. That
+is the whole difference between the two rows above, and it is a difference in
+*trust*, not in wording: the same sentence steers when an admin writes it into
+instance policy and is merely quoted when a room owner writes it into room
+etiquette.
 
 ## 6. The visibility matrix
 
@@ -366,19 +377,27 @@ exclusive `war-room` exists would answer either "that name is taken" — which
 discloses the room and defeats the tier — or an unexplainable failure. There
 is no third option, so the constraint gives way:
 
-**Name uniqueness holds only among the rooms a caller can see.** In practice
-public rooms enforce uniqueness against each other, because everyone can see
-them; private and exclusive rooms are reached by invitation rather than by
-name and need not. Two rooms may hold the same name whenever nobody can see
-both.
+**Name uniqueness holds only among the rooms a caller can see.** Read that
+against §6: public **and private** rooms are both listed, by name, to every
+caller. Everyone can see both sets, so the rule binds across the two of them
+exactly as global uniqueness used to — a private name must not collide with
+another private name or with a public one. Only `exclusive` escapes, which is
+the tier the constraint gave way for in the first place.
 
-The honest consequence is ambiguity for the person who *can* see both. So:
-**a name is an address only where it is unambiguous for the caller.** When a
-caller can see two rooms of one name, a reference by name is refused and the
-refusal asks for the id — and that refusal discloses nothing, because it names
-only rooms this caller can already see. Room ids stay the unambiguous handle
-everywhere, which is why the invite flow and every UI navigation carry the id
-rather than the name.
+So: **two rooms may hold the same name only when at least one of them is
+exclusive.** That is the same sentence as "whenever nobody can see both",
+stated in terms of the tiers rather than left for the reader to derive — and
+deriving it wrongly is easy, because "private" sounds like it should be
+outside the visible set when the matrix says it is not.
+
+The honest consequence is ambiguity for the person who *can* see both, which
+now means only a member of an exclusive room whose name collides with a listed
+one. So: **a name is an address only where it is unambiguous for the caller.**
+When a caller can see two rooms of one name, a reference by name is refused and
+the refusal asks for the id — and that refusal discloses nothing, because it
+names only rooms this caller can already see. Room ids stay the unambiguous
+handle everywhere, which is why the invite flow and every UI navigation carry
+the id rather than the name.
 
 ### 6.2 The current schema, and what this requires changing
 
@@ -396,9 +415,12 @@ and `createRoom` in `src/domain/quorum.ts` refuses a duplicate up front with
 **global, and enforced twice** — an implicit index and an explicit pre-check —
 and both are incompatible with §6.1. This ADR requires changing them:
 
-- **The global uniqueness goes**, replaced by a partial index covering only
-  the rooms uniqueness is meant to protect, e.g.
-  `CREATE UNIQUE INDEX rooms_public_name ON rooms (name) WHERE visibility = 'public'`.
+- **The global uniqueness goes**, replaced by a partial index covering the
+  listed tiers — the rooms uniqueness is meant to protect — e.g.
+  `CREATE UNIQUE INDEX rooms_listed_name ON rooms (name) WHERE visibility <> 'exclusive'`.
+  Scoping the index to `public` alone would under-enforce: two private rooms of
+  one name are both listed to everyone, so every caller would meet the §6.1
+  ambiguity refusal for a collision no tier needed to allow.
 - **The pre-check becomes caller-scoped**: refused when the name collides
   inside the caller's visible set, allowed otherwise. A collision the caller
   cannot see cannot be reported to them.
