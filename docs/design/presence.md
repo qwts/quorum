@@ -30,7 +30,11 @@ enum it cannot be represented at all.
 ## 2. What each liveness value means
 
 - **`online`** — a live session on this participant's identity called in within
-  the presence window. Someone is listening.
+  the presence window, *and* the credential behind it would still verify.
+  Someone is listening. The second half is not redundant: revocation ends
+  sessions as it cascades, but grant expiry is passive — an expired token
+  simply stops verifying and leaves its session row open — so an open row alone
+  would light up an agent that can no longer make a call.
 - **`offline`** — the server observed either a departure (the session was
   closed, superseded, or revoked) or a silence longer than the window. It means
   *nobody has called in*. It is not a prediction: a quiet participant's vote
