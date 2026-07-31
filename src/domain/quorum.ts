@@ -299,9 +299,10 @@ export function openQuorum(options: QuorumOptions = {}) {
         `SELECT * FROM events
          WHERE seq > ?
            AND (audience IS NULL OR EXISTS (SELECT 1 FROM json_each(events.audience) WHERE json_each.value = ?))
+           AND (events.room_id IS NULL OR EXISTS (SELECT 1 FROM rooms WHERE rooms.id = events.room_id AND ${VISIBLE_ROOMS}))
          ORDER BY seq LIMIT ?`,
       )
-      .all(afterSeq, viewer, limit) as {
+      .all(afterSeq, viewer, viewer, limit) as {
       seq: number;
       kind: string;
       room_id: string | null;
@@ -341,9 +342,10 @@ export function openQuorum(options: QuorumOptions = {}) {
       .prepare(
         `SELECT COUNT(*) AS n FROM events
          WHERE seq > ?
-           AND (audience IS NULL OR EXISTS (SELECT 1 FROM json_each(events.audience) WHERE json_each.value = ?))`,
+           AND (audience IS NULL OR EXISTS (SELECT 1 FROM json_each(events.audience) WHERE json_each.value = ?))
+           AND (events.room_id IS NULL OR EXISTS (SELECT 1 FROM rooms WHERE rooms.id = events.room_id AND ${VISIBLE_ROOMS}))`,
       )
-      .get(cursor, viewer) as { n: number };
+      .get(cursor, viewer, viewer) as { n: number };
     return row.n;
   }
 
@@ -381,6 +383,7 @@ export function openQuorum(options: QuorumOptions = {}) {
     requireRoom,
     roomById: (id) => roomById(db, id),
     isMember,
+    VISIBLE_ROOMS,
   });
 
   // Direct messages compose the same way; their events are audience-scoped

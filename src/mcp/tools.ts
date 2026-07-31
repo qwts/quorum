@@ -680,7 +680,7 @@ export async function callTool(
       const deliberationId = str(args, 'deliberation_id') ?? '';
       // A challenge IS a room message with a tag (deliberation.md D4) — same
       // implementation, same event, one extra column.
-      const view = quorum.getDeliberation({ deliberationId });
+      const view = quorum.getDeliberation({ deliberationId, viewerId: participantId });
       const message = quorum.postMessage({
         room: view.roomId,
         participantId,
@@ -738,7 +738,7 @@ export async function callTool(
     }
 
     case 'get_deliberation': {
-      const view = quorum.getDeliberation({ deliberationId: str(args, 'deliberation_id') ?? '' });
+      const view = quorum.getDeliberation({ deliberationId: str(args, 'deliberation_id') ?? '', viewerId: session.participantId });
       const deadline = view.phaseEndsAt === null ? '' : ` until ${new Date(view.phaseEndsAt).toISOString()}`;
       const verb =
         view.phase === 'challenging'

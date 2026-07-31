@@ -72,6 +72,8 @@ export type Deps = {
   /** An id this server stored — a deliberation's own room — resolved unscoped. */
   roomById: (id: string) => Room;
   isMember: (roomId: string, participantId: string) => boolean;
+  /** SQL predicate for rooms visible to a caller. */
+  VISIBLE_ROOMS: string;
 };
 
 const DEFAULT_CHALLENGE_TTL_MS = 15 * 60 * 1000;
@@ -480,10 +482,10 @@ export function openDeliberations(deps: Deps) {
     // Who has cast is visible; what they cast is not (D6). Choices and
     // dissent are unreachable through this view while the phase is open —
     // they surface only in the record.
-    getDeliberation(input: { deliberationId: string }): DeliberationView {
+    getDeliberation(input: { deliberationId: string; viewerId?: string | null }): DeliberationView {
       sweep();
       const row = requireDeliberation(input.deliberationId);
-      const room = roomById(row.room_id);
+      const room = deps.requireRoom(row.room_id, input.viewerId ?? null);
       return {
         ...toDeliberation(row),
         rule: room.decisionRule,
@@ -513,11 +515,19 @@ export function openDeliberations(deps: Deps) {
 
     listDecisions(input: { room?: string; viewerId?: string | null } = {}): DecisionSummary[] {
       sweep();
-      const roomId = input.room ? requireRoom(input.room, input.viewerId ?? null).id : null;
+      const viewer = input.viewerId ?? null;
+      const roomId = input.room ? requireRoom(input.room, viewer).id : null;
       const rows = (
         roomId
           ? db.prepare('SELECT * FROM decisions WHERE room_id = ? ORDER BY closed_at DESC').all(roomId)
-          : db.prepare('SELECT * FROM decisions ORDER BY closed_at DESC').all()
+          : db
+              .prepare(
+                `SELECT decisions.* FROM decisions
+                 JOIN rooms ON rooms.id = decisions.room_id
+                 WHERE ${deps.VISIBLE_ROOMS}
+                 ORDER BY closed_at DESC`,
+              )
+              .all(viewer)
       ) as {
         deliberation_id: string;
         room_id: string;
