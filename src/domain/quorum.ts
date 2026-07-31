@@ -15,6 +15,7 @@ import { openCommands } from './commands.ts';
 import { openDeliberations } from './deliberation.ts';
 import { openDms, participantResolver } from './dm.ts';
 import { openIdentity } from './identity.ts';
+import { openPresence, UNOBSERVED, type Presence } from './presence.ts';
 import { currentSession } from './acting.ts';
 import { QuorumError } from './errors.ts';
 
@@ -396,6 +397,11 @@ export function openQuorum(options: QuorumOptions = {}) {
   // src/http/auth.ts, which asks these questions of this object.
   const identity = openIdentity({ db, now, appendEvent });
 
+  // Presence reads those same session rows and writes nothing (#17). It is
+  // composed here rather than inside identity because it answers the roster's
+  // question, not the credential's.
+  const presence = openPresence({ db, now });
+
   const api = {
     close(): void {
       db.close();
@@ -464,6 +470,23 @@ export function openQuorum(options: QuorumOptions = {}) {
     listParticipants(): Participant[] {
       const rows = db.prepare('SELECT * FROM participants ORDER BY identified_at').all() as ParticipantRow[];
       return rows.map(toParticipant);
+    },
+
+    // The roster as a *view*: who they are, plus what the server observed of
+    // them a moment ago (#17). Deliberately not a field on Participant —
+    // participants are embedded in event payloads, and the feed is the
+    // product's memory. A stored event must not freeze a value that was only
+    // true at the instant it was written.
+    roster(): (Participant & { presence: Presence })[] {
+      const observed = presence.all();
+      return api.listParticipants().map((person) => ({
+        ...person,
+        presence: observed.get(person.id) ?? UNOBSERVED,
+      }));
+    },
+
+    presenceOf(participantId: string): Presence {
+      return presence.of(participantId);
     },
 
     createRoom(input: { name: string; topic?: string; decisionRule?: DecisionRule; by: string }): Room {

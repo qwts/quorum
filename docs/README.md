@@ -15,7 +15,10 @@ Planning and design documents for quorum. Ordered reading:
 5. [Authority](design/authority.md) — accounts, the owner/admin/moderator
    ladder, room roles, and the capability and visibility matrices every read
    surface answers from ([ADR-0002](decisions/ADR-0002-authority-model.md)).
-6. [Deployment](deploy.md) — the recipe that takes quorum off the laptop:
+6. [Presence](design/presence.md) — the two axes behind "is this participant
+   still there", what each liveness value is allowed to claim, and why none of
+   it may reach a rule (#17).
+7. [Deployment](deploy.md) — the recipe that takes quorum off the laptop:
    an always-on host, credential-gated from day one, Tailscale or public
    TLS, backups (#53).
 

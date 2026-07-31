@@ -7,6 +7,7 @@
 
 import type { Claim, Quorum } from '../domain/quorum.ts';
 import { QuorumError } from '../domain/quorum.ts';
+import { goneQuiet } from '../domain/presence.ts';
 import { callDmTool, DM_TOOLS } from './dms.ts';
 import { commandReply, deliverEvents, deliverMessages, footerNote, num, quoted, requireIdentity, str, type Json, type Session, type ToolDefinition, type ToolReply } from './reply.ts';
 
@@ -185,7 +186,10 @@ const LIST_CLAIMS: ToolDefinition = {
 
 const LIST_PARTICIPANTS: ToolDefinition = {
   name: 'list_participants',
-  description: 'Who is on the roster: name, harness, and where each one is working.',
+  description:
+    'Who is on the roster: name, harness, where each one is working, and whether this server has heard from ' +
+    'them lately. Presence is an observation, never a verdict — "offline" means nobody has called in, not that ' +
+    'an answer will not arrive, and nothing you do should turn on it.',
   inputSchema: { type: 'object', properties: {}, additionalProperties: false },
 };
 
@@ -357,6 +361,43 @@ function describeClaim(claim: Claim, holder: string | undefined): string {
   )} for ${quoted(claim.purpose, 60)}`;
 }
 
+// Being told to go talk to a holder is worth less when the holder is not there
+// (#17). This says so and changes nothing else: the refusal, the scopes, and
+// the expiry are identical either way (deliberation.md D10). One line per
+// holder, not per claim — someone holding three overlapping leases has gone
+// quiet once.
+function quietHolders(quorum: Quorum, conflicts: Claim[], names: Map<string, string>): string {
+  const said = new Set<string>();
+  const quiet: string[] = [];
+  for (const claim of conflicts) {
+    if (said.has(claim.participantId)) continue;
+    said.add(claim.participantId);
+    const clause = goneQuiet(quorum.presenceOf(claim.participantId));
+    if (clause !== null) quiet.push(`${quoted(names.get(claim.participantId) ?? 'the holder', 40)} ${clause}`);
+  }
+  if (quiet.length === 0) return '';
+  return ` ${quiet.join('; ')} — an answer may be slow in coming, but the lease still expires on its own.`;
+}
+
+// The other half of #17's requirement 2: which eligible voters have not cast
+// *and* have gone quiet. Advice to whoever is watching the clock, and nothing
+// more — the phase still closes on its deadline, the rule is still computed
+// from ballots alone, and a quiet voter's ballot still counts if it lands
+// (D2, D10). Naming them is the whole value: "3 of 5 in" does not say whether
+// to wait.
+function quietVoters(quorum: Quorum, eligible: string[], cast: string[]): string {
+  const voted = new Set(cast);
+  const names = new Map(quorum.listParticipants().map((person) => [person.id, person.name]));
+  const quiet = eligible
+    .filter((id) => !voted.has(id) && goneQuiet(quorum.presenceOf(id)) !== null)
+    .map((id) => quoted(names.get(id) ?? 'an eligible voter', 40));
+  if (quiet.length === 0) return '';
+  return (
+    ` This server has not heard from ${quiet.join(', ')} lately; their ballots may not arrive.` +
+    ` That is an observation, not a rule — the deadline closes this phase either way.`
+  );
+}
+
 // Every branch answers with values *and* the next call, so the loop closes
 // without an agent having to remember it: identify → claim → work → release,
 // and wait_for_events whenever there is nothing to do. Rule 6 of the contract
@@ -423,10 +464,18 @@ export async function callTool(
     }
 
     case 'list_participants': {
-      const participants = quorum.listParticipants();
+      const participants = quorum.roster();
+      // Counted, not named: the roster is the place to read who is where, and
+      // a guidance line that listed the quiet ones would be repeating data the
+      // caller already has in front of it.
+      const quiet = participants.filter((person) => person.presence.liveness === 'offline').length;
       return {
         guidance:
-          `${participants.length} participant(s) on the roster.` +
+          `${participants.length} participant(s) on the roster` +
+          (quiet === 0
+            ? '.'
+            : `, ${quiet} of whom this server has not heard from lately —` +
+              ` that is what was observed, not a prediction, and a quiet participant may still answer.`) +
           ` To reach one, post_message in a room you both joined; list_rooms shows what exists.`,
         data: { participants },
       };
@@ -607,7 +656,7 @@ export async function callTool(
       const lastToExpire = Math.max(...grant.conflicts.map((claim) => claim.expiresAt));
       return {
         guidance:
-          `Refused. ${holders}. Do not route around it.` +
+          `Refused. ${holders}.${quietHolders(quorum, grant.conflicts, names)} Do not route around it.` +
           ` Talk to the holder with post_message, claim a different scope, or call wait_for_events` +
           ` with after_seq=${session.cursor} — you will be woken when a claim is released.` +
           ` Every claim in the way is gone by ${new Date(lastToExpire).toISOString()} at the latest;` +
@@ -745,7 +794,8 @@ export async function callTool(
           ? `Challenge window open${deadline} — challenge to argue, or wait_for_events for voting_opened.`
           : view.phase === 'voting'
             ? `Voting open${deadline}; ${view.cast.length} of ${view.eligible.length} ballots in, contents hidden.` +
-              ` vote if you are eligible and have not — or re-cast to change.`
+              ` vote if you are eligible and have not — or re-cast to change.` +
+              quietVoters(quorum, view.eligible, view.cast)
             : `Closed ${view.phase}. get_decision for the immutable record.`;
       return {
         guidance: `Phase: ${view.phase}. ${verb}`,
