@@ -118,7 +118,11 @@ export function serveApi(req: IncomingMessage, res: ServerResponse, url: URL, qu
     }
 
     if (route === 'participants') {
-      send(res, 200, { seq, participants: quorum.listParticipants() });
+      // The roster view, presence included (#17). The browser cannot derive
+      // "quiet for 4m" itself — its clock is not this server's — so the
+      // elapsed time comes down with the answer rather than being recomputed
+      // against a skewed one.
+      send(res, 200, { seq, participants: quorum.roster() });
       return true;
     }
 
