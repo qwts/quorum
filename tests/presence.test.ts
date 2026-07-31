@@ -123,6 +123,26 @@ test('presence follows the session that supersedes, and dies with a revoked gran
   quorum.close();
 });
 
+test('an expired token is offline the moment it expires, session row or not', () => {
+  const { quorum, tick } = fresh();
+  const { participant } = quorum.identify({ name: 'ada', harness: 'test' });
+  const { grant, principal } = quorum.identity.mint({ name: 'ada-principal', ttlMs: 60_000 });
+  quorum.identity.bindParticipant({ participantId: participant.id, principalId: principal.id });
+  assert.ok(quorum.identity.establish({ grantId: grant.id, source: 'test' }).ok);
+  assert.equal(quorum.presenceOf(participant.id).liveness, 'online');
+
+  // Revocation ends sessions as it cascades, but expiry is passive: the token
+  // simply stops verifying and the session row stays open forever. Presence
+  // has to ask the same question identity.verify() asks, or it reports someone
+  // as listening who cannot make another call.
+  tick(60_001);
+  assert.equal(quorum.identity.verify('anything').ok, false);
+  const gone = quorum.presenceOf(participant.id);
+  assert.equal(gone.liveness, 'offline', 'a dead credential is nobody listening, window or no window');
+  assert.equal(gone.lastSeenAt, 1_700_000_000_000, 'and when it was last heard from is still true');
+  quorum.close();
+});
+
 test('the presence window is its own number, not the session grace window', () => {
   const { quorum, tick } = fresh();
   const { participant } = credentialed(quorum, 'ada');

@@ -81,7 +81,7 @@ type PresenceRow = {
   principal_id: string | null;
   /** Latest heartbeat on any session of this identity, ended ones included. */
   last_seen: number | null;
-  /** Latest heartbeat on a session that has not ended. */
+  /** Latest heartbeat on a session that could still make the next call. */
   live_seen: number | null;
 };
 
@@ -89,12 +89,29 @@ type PresenceRow = {
 // predicate differs. LEFT JOIN throughout so a participant with no principal —
 // or a principal with no session yet — still comes back as a row to be
 // classified, rather than vanishing into an absence the caller has to guess at.
+//
+// `live_seen` asks the question `identity.verify()` asks, deliberately: an open
+// session row is not enough, because the credential behind it must still work
+// for the next call to arrive. Revocation already ends sessions as it cascades
+// (tree.ts), but **expiry is passive** — a grant with a finite TTL simply stops
+// verifying, and its session row stays open forever. Without the check below,
+// an agent whose token expired would read `online` for a further presence
+// window while it was in fact unable to speak at all. The whole conditions list
+// is mirrored rather than expiry alone, so a future revocation path that
+// forgets to end a session cannot quietly leave someone lit up here either.
 const PROJECTION = `
   SELECT p.id AS participant_id,
          p.principal_id AS principal_id,
          MAX(s.last_seen_at) AS last_seen,
-         MAX(CASE WHEN s.ended_at IS NULL THEN s.last_seen_at END) AS live_seen
+         MAX(CASE WHEN s.ended_at IS NULL
+                   AND g.revoked_at IS NULL
+                   AND (g.expires_at IS NULL OR g.expires_at > ?)
+                   AND pr.revoked_at IS NULL
+                   AND a.revoked_at IS NULL
+                  THEN s.last_seen_at END) AS live_seen
     FROM participants p
+    LEFT JOIN principals pr ON pr.id = p.principal_id
+    LEFT JOIN accounts a ON a.id = pr.account_id
     LEFT JOIN grants g ON g.principal_id = p.principal_id
     LEFT JOIN sessions s ON s.grant_id = g.id`;
 
@@ -102,14 +119,13 @@ export function openPresence(deps: Deps) {
   const { db, now } = deps;
   const windowMs = deps.windowMs ?? PRESENCE_WINDOW_MS;
 
-  function project(row: PresenceRow): Presence {
+  function project(row: PresenceRow, at: number): Presence {
     // No identity behind the name, so no session and nothing to observe.
     if (row.principal_id === null) return UNOBSERVED;
-    const at = now();
     const lastSeenAt = row.last_seen;
     // A session that ended is not a session gone quiet: a clean disconnect, a
     // supersede, and a revocation are all the server watching someone leave.
-    // Only a live session can hold someone online, and only while its last
+    // Only a usable session can hold someone online, and only while its last
     // heartbeat is inside the window.
     const live = row.live_seen !== null && at - row.live_seen <= windowMs;
     return {
@@ -119,19 +135,23 @@ export function openPresence(deps: Deps) {
     };
   }
 
+  // One clock reading per call, shared by the query and the comparison: two
+  // readings could straddle a millisecond and answer about two instants.
   return {
     /** What the server has observed of one participant. */
     of(participantId: string): Presence {
-      const row = db.prepare(`${PROJECTION} WHERE p.id = ? GROUP BY p.id`).get(participantId) as
+      const at = now();
+      const row = db.prepare(`${PROJECTION} WHERE p.id = ? GROUP BY p.id`).get(at, participantId) as
         | PresenceRow
         | undefined;
-      return row ? project(row) : UNOBSERVED;
+      return row ? project(row, at) : UNOBSERVED;
     },
 
     /** The same for everyone on the roster, in one read. */
     all(): Map<string, Presence> {
-      const rows = db.prepare(`${PROJECTION} GROUP BY p.id`).all() as PresenceRow[];
-      return new Map(rows.map((row) => [row.participant_id, project(row)]));
+      const at = now();
+      const rows = db.prepare(`${PROJECTION} GROUP BY p.id`).all(at) as PresenceRow[];
+      return new Map(rows.map((row) => [row.participant_id, project(row, at)]));
     },
   };
 }
