@@ -26,10 +26,18 @@ npm test
 ```
 
 Ready pull requests run or reuse exact-commit evidence for those checks and
-advanced CodeQL analysis. A validated commit pushed to `main` runs focused MCP
-and HTTP integration smoke tests plus the default-branch CodeQL scan; a commit
-without exact evidence falls back to the complete suite. This repository has no
-configured build, formatting, Markdown-lint, docs-gov, changeset, packaging,
-signing, or automated release gate.
+advanced CodeQL analysis. A validated commit pushed to `main` reuses that
+exact-commit CodeQL evidence and runs only focused MCP and HTTP integration
+smoke tests; a commit without exact evidence falls back to the complete suite,
+including CodeQL.
+
+Dependabot pull requests must use GitHub's **Create a merge commit** strategy.
+Squash or rebase can leave a Dependabot-authored commit on `main` with a
+read-only token that cannot upload the required CodeQL result; the complete
+suite fails safely in that case. This constraint does not change the
+repository-wide merge-method settings.
+
+This repository has no configured build, formatting, Markdown-lint, docs-gov,
+changeset, packaging, signing, or automated release gate.
 
 Repo-specific gates and deltas, if any, are listed in this repo's `AGENTS.md`.

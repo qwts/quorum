@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
 const codeql = readFileSync(new URL('../.github/workflows/codeql.yml', import.meta.url), 'utf8');
+const contributing = readFileSync(new URL('../CONTRIBUTING.md', import.meta.url), 'utf8');
 
 test('CI exposes only the governed lifecycle triggers', () => {
   assert.match(ci, /^  pull_request:$/m);
@@ -50,6 +51,19 @@ test('the existing complete suite remains intact behind the stable CI gate', () 
 test('post-merge work is a focused integration smoke', () => {
   assert.match(ci, /name: Post-merge smoke/);
   assert.match(ci, /node --test tests\/mcp\.test\.ts tests\/web\.test\.ts/);
+});
+
+test('post-merge reuses exact-SHA CodeQL evidence and the fallback reruns it', () => {
+  const codeqlJob = ci.slice(ci.indexOf('  codeql:'), ci.indexOf('\n  post-merge:'));
+  const postMergeGate = ci.slice(ci.indexOf('            post-merge)'), ci.indexOf('\n            *)'));
+
+  assert.match(codeqlJob, /run_post_merge == 'true' && needs\.merge-evidence\.outputs\.validated != 'true'/);
+  assert.doesNotMatch(codeqlJob, /run_post_merge == 'true' \|\|/);
+  assert.match(
+    postMergeGate,
+    /if \[ "\$MERGE_VALIDATED" = true \]; then[\s\S]*test "\$POST_MERGE" = success[\s\S]*else[\s\S]*test "\$TEST" = success[\s\S]*test "\$CODEQL" = success/,
+  );
+  assert.match(contributing, /Dependabot pull requests must use GitHub's \*\*Create a merge commit\*\*/);
 });
 
 test('CodeQL remains advanced, reusable, pinned, and covers both existing languages', () => {
