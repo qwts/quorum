@@ -13,4 +13,23 @@ SOPs, decisions, and baselines there apply here by default.
   [security policy](https://github.com/qwts/.github/blob/main/SECURITY.md);
   report vulnerabilities privately, never in a public issue.
 
+## Validation lifecycle
+
+This repository follows the shared
+[CI execution policy](https://github.com/qwts/playbook-engineering/blob/main/docs/reference/ci-execution-policy.md).
+Before marking a draft pull request ready, run the complete local suite:
+
+```bash
+npm ci
+npm run typecheck
+npm test
+```
+
+Ready pull requests run or reuse exact-commit evidence for those checks and
+advanced CodeQL analysis. A validated commit pushed to `main` runs focused MCP
+and HTTP integration smoke tests plus the default-branch CodeQL scan; a commit
+without exact evidence falls back to the complete suite. This repository has no
+configured build, formatting, Markdown-lint, docs-gov, changeset, packaging,
+signing, or automated release gate.
+
 Repo-specific gates and deltas, if any, are listed in this repo's `AGENTS.md`.
