@@ -23,8 +23,6 @@ fi
 setup="${AGENT_BOT_BIN:-agent-bot}"
 if command -v "$setup" >/dev/null 2>&1; then
   "$setup" setup-worktree
-elif [[ -x "$HOME/.local/bin/agent-bot" ]]; then
-  "$HOME/.local/bin/agent-bot" setup-worktree
 elif [[ -n "${AGENT_BOT_HOME:-}" && -f "$AGENT_BOT_HOME/setup-worktree.mjs" ]]; then
   node "$AGENT_BOT_HOME/setup-worktree.mjs"
 else
