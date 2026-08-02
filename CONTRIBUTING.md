@@ -23,6 +23,8 @@ Before marking a draft pull request ready, run the complete local suite:
 npm ci
 npm run typecheck
 npm test
+npm run test:workflows
+npm run lint:workflows
 ```
 
 Ready pull requests run or reuse exact-commit evidence for those checks and

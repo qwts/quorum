@@ -2,6 +2,7 @@
 # Repository Actions Policy is the primary actor/fork boundary; the immutable
 # policy action below is a second, fail-closed check before repository code runs.
 name: CI
+run-name: CI
 
 on:
   pull_request:
