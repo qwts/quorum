@@ -13,7 +13,12 @@
 set -eu
 
 CERTS="${QUORUM_CERTS:-$HOME/.quorum/certs}"
-HOSTNAME_="${QUORUM_DEV_HOST:-local.dev.zts1.com}"
+HOSTNAME_="${QUORUM_DEV_HOST:-}"
+
+# Trusting a shared public hostname by default would let whoever controls its
+# DNS rebind a browser origin to this unauthenticated loopback server. Require
+# each operator to choose a name they control (or map locally) instead.
+[ -n "$HOSTNAME_" ] || { echo "dev-tls: QUORUM_DEV_HOST is required; set it to a hostname you control or map locally" >&2; exit 1; }
 
 QUORUM_TLS_CERT="${QUORUM_TLS_CERT:-$CERTS/fullchain.pem}"
 QUORUM_TLS_KEY="${QUORUM_TLS_KEY:-$CERTS/key.pem}"

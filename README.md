@@ -24,7 +24,9 @@ npm start
 It listens on `127.0.0.1:4242` and keeps its state in `~/.quorum/quorum.db`.
 `QUORUM_PORT`, `QUORUM_DB`, and `QUORUM_HOST` override those; `QUORUM_TLS_CERT`,
 `QUORUM_TLS_KEY`, `QUORUM_TLS_PASSPHRASE_FILE`, `QUORUM_HOSTS` and
-`QUORUM_PUBLIC_HOST` configure the optional TLS hostname (`npm run dev:tls`).
+`QUORUM_PUBLIC_HOST` configure the optional TLS hostname. `npm run dev:tls`
+requires `QUORUM_DEV_HOST` to be a hostname you control or map locally; it has
+no shared public default.
 v0 trusts the
 machine boundary and has no authentication, so leave the host on loopback.
 
