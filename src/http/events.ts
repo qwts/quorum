@@ -29,6 +29,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { refuseView } from './auth.ts';
 import type { Quorum } from '../domain/quorum.ts';
+import { refuseRead } from './origin.ts';
 
 export const EVENTS_PATH = '/api/events';
 
@@ -96,6 +97,13 @@ export function serveEvents(req: IncomingMessage, res: ServerResponse, url: URL,
   if (req.method !== 'GET') {
     res.writeHead(405, { 'content-type': 'application/json', allow: 'GET' });
     res.end(JSON.stringify({ error: 'the event stream is read-only' }));
+    return true;
+  }
+
+  const refusal = refuseRead(req);
+  if (refusal) {
+    res.writeHead(403, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+    res.end(JSON.stringify({ error: refusal }));
     return true;
   }
 

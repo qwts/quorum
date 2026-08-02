@@ -23,6 +23,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { QuorumError } from '../domain/errors.ts';
 import { refuseView } from './auth.ts';
 import type { Quorum } from '../domain/quorum.ts';
+import { refuseRead } from './origin.ts';
 
 export const API_PREFIX = '/api/';
 
@@ -90,6 +91,12 @@ export function serveApi(req: IncomingMessage, res: ServerResponse, url: URL, qu
     // this. Kept because it is what makes "this file only reads" true of the
     // file rather than of the wiring around it.
     send(res, 405, { error: 'this route reads only; writes are POSTs handled elsewhere' });
+    return true;
+  }
+
+  const refusal = refuseRead(req);
+  if (refusal) {
+    send(res, 403, { error: refusal });
     return true;
   }
 
