@@ -17,7 +17,7 @@ import { join as joinPath } from 'node:path';
 
 import { openQuorum } from '../src/domain/quorum.ts';
 import { MCP_PATH, startServer } from '../src/mcp/server.ts';
-import { allowedHosts, refuseWrite } from '../src/http/origin.ts';
+import { allowedHosts, refuseRead, refuseWrite } from '../src/http/origin.ts';
 import { certificateHost, explainTlsFailure, loadTls, readPassphrase } from '../src/http/tls.ts';
 
 const quorum = openQuorum();
@@ -231,9 +231,13 @@ test('a rebound hostname is refused however well its headers agree', () => {
   );
   assert.match(rebound!, /does not answer to that hostname/);
 
+  const reboundRead = refuseRead(headers({ host: 'evil.example:4242', origin: 'http://evil.example:4242' }), hosts);
+  assert.match(reboundRead!, /does not answer to that hostname/);
+
   // Loopback still works, by name and by address, with and without a port.
   for (const host of ['127.0.0.1:4242', 'localhost:4242', '[::1]:4242', 'localhost']) {
     assert.equal(refuseWrite(headers({ host, 'content-type': 'application/json' }), hosts), null, host);
+    assert.equal(refuseRead(headers({ host }), hosts), null, host);
   }
 
   // A page on an allowed host cannot reach it from a disallowed origin.
@@ -328,6 +332,16 @@ test('a text/plain tool call cannot skip the preflight on /mcp (#32)', async () 
   });
   assert.equal(simple.status, 415, 'the refusal is the content-type check, not some earlier gate');
   assert.match(String(simple.body.error?.message), /Content-Type/i);
+});
+
+test('an untrusted browser origin cannot read the API or event stream', async () => {
+  for (const path of ['/api/participants', `/api/dms?as=${codex.id}`, `/api/events?as=${codex.id}&after=0`]) {
+    const response = await fetch(`${origin}${path}`, {
+      headers: { host: 'evil.example', origin: 'http://evil.example' },
+    });
+    assert.equal(response.status, 403, path);
+    assert.match(((await response.json()) as { error: string }).error, /cross-origin reads/, path);
+  }
 });
 
 test('a malformed path is a bad request, not a server fault', async () => {

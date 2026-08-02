@@ -1,13 +1,10 @@
-// The browser write guard: which requests are allowed to mutate anything.
+// The browser request guard: which requests may reach this loopback server.
 //
-// This process listens on 127.0.0.1 with no auth, which is fine while it only
-// reads. The moment it writes, every page the human visits can reach it: a
-// script on any site can `fetch('http://127.0.0.1:4242/api/…', {method:'POST'})`
-// — or, just as easily, `fetch('http://127.0.0.1:4242/mcp', …)` and place a
-// tool call directly — and post messages, cast ballots, or convene
-// deliberations in their name. The response is opaque to the attacker, but
-// the write has already happened, and this transport's whole product is a
-// record of who said what.
+// This process listens on 127.0.0.1 with no auth, so every page the human
+// visits can try to reach it. Writes could post messages or cast ballots in
+// their name; confidential reads could disclose their direct messages through
+// a rebound hostname. The guard therefore applies to both directions —
+// including the MCP endpoint, where a tool call is a write wearing JSON-RPC.
 //
 // Two checks close it, and both are needed:
 //
@@ -59,10 +56,11 @@ function hostname(value: string): string | null {
 }
 
 /**
- * Whether this request's Host and Origin are ones this server answers to.
+ * Whether this request may reach the browser API.
  *
  * Returns the refusal to send, or null when it is allowed. Stated as data so
- * the reason reaches the caller instead of becoming a bare 403.
+ * the reason reaches the caller instead of becoming a bare 403. Write-only
+ * content-type enforcement remains in `refuseWrite` below.
  *
  * Both Host and Origin are checked against the allowlist, and neither is
  * checked against the other. Comparing them to each other only proves the
@@ -76,7 +74,11 @@ function hostname(value: string): string | null {
  * call is a write wearing JSON-RPC, and the rebinding attack does not care
  * which wire format carries it.
  */
-export function refuseOrigin(req: IncomingMessage, hosts: Set<string> = allowedHosts()): string | null {
+function refuseRequest(
+  req: IncomingMessage,
+  action: 'requests' | 'reads' | 'writes',
+  hosts: Set<string>,
+): string | null {
   const host = typeof req.headers.host === 'string' ? hostname(req.headers.host) : null;
   if (host === null || !hosts.has(host)) {
     return 'this server does not answer to that hostname';
@@ -86,10 +88,15 @@ export function refuseOrigin(req: IncomingMessage, hosts: Set<string> = allowedH
   if (typeof origin === 'string' && origin !== '' && origin !== 'null') {
     const from = hostname(origin);
     if (from === null || !hosts.has(from)) {
-      return 'cross-origin requests are refused; open the UI this server serves';
+      return `cross-origin ${action} are refused; open the UI this server serves`;
     }
   }
   return null;
+}
+
+/** Guard the MCP write surface while preserving its transport-specific wording. */
+export function refuseOrigin(req: IncomingMessage, hosts: Set<string> = allowedHosts()): string | null {
+  return refuseRequest(req, 'requests', hosts);
 }
 
 /**
@@ -103,7 +110,7 @@ export function refuseOrigin(req: IncomingMessage, hosts: Set<string> = allowedH
  * instead of, the origin check — never a substitute for it.
  */
 export function refuseWrite(req: IncomingMessage, hosts: Set<string> = allowedHosts()): string | null {
-  const refused = refuseOrigin(req, hosts);
+  const refused = refuseRequest(req, 'writes', hosts);
   if (refused) return refused;
 
   const type = (req.headers['content-type'] ?? '').split(';')[0]!.trim().toLowerCase();
@@ -111,4 +118,9 @@ export function refuseWrite(req: IncomingMessage, hosts: Set<string> = allowedHo
     return 'writes must be application/json';
   }
   return null;
+}
+
+/** Refuse a read reached through an untrusted Host or browser Origin. */
+export function refuseRead(req: IncomingMessage, hosts: Set<string> = allowedHosts()): string | null {
+  return refuseRequest(req, 'reads', hosts);
 }
