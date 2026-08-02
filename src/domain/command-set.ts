@@ -185,8 +185,8 @@ export function buildRegistry(deps: Deps): Command[] {
         if (invitee.id === sender.id) throw new QuorumError('that invitation is to yourself — you are already here');
         if (isMember(where.id, invitee.id)) throw new QuorumError(`${invitee.name} is already in #${where.name}`);
         // Rooms are joined, never assigned: the invite is an audience-scoped
-        // event, and joining stays the invitee's own act. The guidance rides
-        // in the payload so the delivery is self-describing (#51's shape).
+        // event, and joining stays the invitee's own act. Guidance is entirely
+        // server-authored; the participant-authored names stay in data below.
         appendEvent(
           'invited',
           where.id,
@@ -194,7 +194,7 @@ export function buildRegistry(deps: Deps): Command[] {
             room: where,
             by: sender,
             invitee,
-            guidance: `${sender.name} invited you to #${where.name} — call join_room with room ${JSON.stringify(where.name)} to accept.`,
+            guidance: 'You were invited to a room — call join_room with payload.room.name to accept.',
           },
           sender.id,
           [invitee.id],
