@@ -22,6 +22,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { QuorumError } from '../domain/errors.ts';
 import type { Quorum } from '../domain/quorum.ts';
+import { refuseRead } from './origin.ts';
 
 export const API_PREFIX = '/api/';
 
@@ -89,6 +90,15 @@ export function serveApi(req: IncomingMessage, res: ServerResponse, url: URL, qu
     // this. Kept because it is what makes "this file only reads" true of the
     // file rather than of the wiring around it.
     send(res, 405, { error: 'this route reads only; writes are POSTs handled elsewhere' });
+    return true;
+  }
+
+  // Reads contain participant messages, ballots, and dissent. Checking Host
+  // prevents a page served from an attacker-controlled name from rebinding
+  // that name to this loopback server and reading the response as same-origin.
+  const refusal = refuseRead(req);
+  if (refusal) {
+    send(res, 403, { error: refusal });
     return true;
   }
 

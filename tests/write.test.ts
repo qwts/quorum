@@ -11,12 +11,13 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
+import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join as joinPath } from 'node:path';
 
 import { openQuorum } from '../src/domain/quorum.ts';
 import { startServer } from '../src/mcp/server.ts';
-import { allowedHosts, refuseWrite } from '../src/http/origin.ts';
+import { allowedHosts, refuseRead, refuseWrite } from '../src/http/origin.ts';
 import { certificateHost, explainTlsFailure, loadTls, readPassphrase } from '../src/http/tls.ts';
 
 const quorum = openQuorum();
@@ -229,6 +230,7 @@ test('a rebound hostname is refused however well its headers agree', () => {
     hosts,
   );
   assert.match(rebound!, /does not answer to that hostname/);
+  assert.match(refuseRead(headers({ host: 'evil.example:4242' }), hosts)!, /does not answer to that hostname/);
 
   // Loopback still works, by name and by address, with and without a port.
   for (const host of ['127.0.0.1:4242', 'localhost:4242', '[::1]:4242', 'localhost']) {
@@ -249,6 +251,21 @@ test('a rebound hostname is refused however well its headers agree', () => {
   const dev = { host: 'quorum.local.example.com', origin: 'https://quorum.local.example.com', 'content-type': 'application/json' };
   assert.match(refuseWrite(headers(dev), hosts)!, /does not answer/);
   assert.equal(refuseWrite(headers(dev), configured), null);
+});
+
+test('a rebound hostname cannot read the human API', async () => {
+  const response = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+    const req = request(`${origin}/api/decisions`, { headers: { host: 'evil.example' } }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => (body += chunk));
+      res.on('end', () => resolve({ status: res.statusCode!, body }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+  assert.equal(response.status, 403);
+  assert.match((JSON.parse(response.body) as { error: string }).error, /does not answer to that hostname/);
 });
 
 test('a malformed path is a bad request, not a server fault', async () => {

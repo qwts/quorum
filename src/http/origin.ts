@@ -1,7 +1,8 @@
-// The browser write guard: which requests are allowed to mutate anything.
+// The browser request guard: which hostnames may read or mutate anything.
 //
-// This process listens on 127.0.0.1 with no auth, which is fine while it only
-// reads. The moment it writes, every page the human visits can reach it: a
+// This process listens on 127.0.0.1 with no auth. Reads expose participant
+// messages and decision records to DNS rebinding unless Host is constrained.
+// Writes need the same constraint: every page the human visits can reach it; a
 // script on any site can `fetch('http://127.0.0.1:4242/api/…', {method:'POST'})`
 // and post messages, cast ballots, or convene deliberations in their name. The
 // response is opaque to the attacker, but the write has already happened, and
@@ -36,6 +37,12 @@ export function allowedHosts(env: NodeJS.ProcessEnv = process.env): Set<string> 
   return new Set(['127.0.0.1', 'localhost', '::1', '[::1]', ...extra]);
 }
 
+/** Refuse requests addressed to a hostname this local server does not trust. */
+export function refuseRead(req: IncomingMessage, hosts: Set<string> = allowedHosts()): string | null {
+  const host = typeof req.headers.host === 'string' ? hostname(req.headers.host) : null;
+  return host === null || !hosts.has(host) ? 'this server does not answer to that hostname' : null;
+}
+
 /**
  * The hostname out of a Host header or an Origin, or null when it is neither.
  *
@@ -65,10 +72,8 @@ function hostname(value: string): string | null {
  * server was never told to answer to is refused whatever else agrees with it.
  */
 export function refuseWrite(req: IncomingMessage, hosts: Set<string> = allowedHosts()): string | null {
-  const host = typeof req.headers.host === 'string' ? hostname(req.headers.host) : null;
-  if (host === null || !hosts.has(host)) {
-    return 'this server does not answer to that hostname';
-  }
+  const hostRefusal = refuseRead(req, hosts);
+  if (hostRefusal) return hostRefusal;
 
   const origin = req.headers.origin;
   if (typeof origin === 'string' && origin !== '' && origin !== 'null') {
