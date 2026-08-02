@@ -7,6 +7,7 @@ const codeql = readFileSync(new URL('../.github/workflows/codeql.yml', import.me
 const contributing = readFileSync(new URL('../CONTRIBUTING.md', import.meta.url), 'utf8');
 
 test('CI exposes only the governed lifecycle triggers', () => {
+  assert.match(ci, /^run-name: CI$/m);
   assert.match(ci, /^  pull_request:$/m);
   assert.match(ci, /types: \[opened, synchronize, reopened, ready_for_review\]/);
   assert.match(ci, /^  push:$/m);
@@ -27,6 +28,16 @@ test('actor and fork enforcement is loaded from a trusted immutable commit', () 
     /uses: qwts\/playbook-engineering\/\.github\/actions\/ci-policy@19d88d7ecdc7b1d842194cd5be3a398cb1211fde/,
   );
   assert.doesNotMatch(ci, /uses: \.\/\.github\/actions\/ci-policy/);
+  assert.match(ci, /permissions:\n  actions: read\n  contents: read/);
+  assert.ok(ci.indexOf('  policy:') < ci.indexOf('actions/checkout@'));
+  assert.doesNotMatch(ci, /^  (?:pull_request_target|workflow_run):$/m);
+});
+
+test('the stable CI context is the aggregate lifecycle verdict', () => {
+  assert.match(ci, /^  gate:\n    name: CI$/m);
+  assert.match(ci, /needs: \[policy, merge-evidence, preflight-evidence, test, codeql, post-merge\]/);
+  assert.match(ci, /test "\$POLICY" = success/);
+  assert.match(ci, /case "\$MODE" in/);
 });
 
 test('exact-SHA evidence selects the complete or post-merge lane', () => {
