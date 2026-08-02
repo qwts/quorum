@@ -73,6 +73,12 @@ export function withFooter(body: string, footer: string | null): string {
 // and unvouched, its dashes are participant text under contract rule 8.
 const FORGED_RULE = /^[ \t]*-{3,}[ \t]*$/m;
 
+// A format control in the participant prefix can reorder or hide the trusted
+// suffix even though it never enters the footer itself. Other non-printing
+// controls can likewise affect a terminal. Keep ordinary line structure, but
+// never join either class of hostile control to server-authored guidance.
+const UNSAFE_FOOTER_PREFIX = /[\p{Cf}\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u;
+
 // A body can contain its own `---` — it is delivered verbatim, so nothing in
 // the composed text authenticates the footer. The only line a participant
 // cannot reach is the reply's own guidance, so that is where the server
@@ -101,7 +107,7 @@ export function deliverMessages<M extends { id: number; body: string; participan
   if (recipientId === null) return { delivered: messages, footered: [] };
   const footered: number[] = [];
   const delivered = messages.map((message) => {
-    if (FORGED_RULE.test(message.body)) return message;
+    if (FORGED_RULE.test(message.body) || UNSAFE_FOOTER_PREFIX.test(message.body)) return message;
     const footer = quorum.deliveryGuidance({
       body: message.body,
       from: names.get(message.participantId) ?? 'another participant',
@@ -133,7 +139,7 @@ export function deliverEvents<E extends { seq: number; kind: string; payload: Re
     const message = event.payload.message as { body?: unknown; roomId?: unknown } | undefined;
     const from = event.payload.from;
     if (typeof message?.body !== 'string' || typeof from !== 'string') return event;
-    if (FORGED_RULE.test(message.body)) return event;
+    if (FORGED_RULE.test(message.body) || UNSAFE_FOOTER_PREFIX.test(message.body)) return event;
     roomNames ??= new Map(quorum.listRooms({ viewerId: recipientId }).map((room) => [room.id, room.name]));
     const footer = quorum.deliveryGuidance({
       body: message.body,
