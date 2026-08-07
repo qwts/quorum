@@ -23,7 +23,7 @@ import { QuorumElement, define, h } from '../lib/element.js';
 export class DecisionCard extends QuorumElement {
   static props = ['recordId', 'question', 'outcome', 'result', 'failureKind', 'decidedAt', 'room', 'decisionRule', 'reason', 'summary', 'variant', 'openable'];
 
-  /** `options: [{option, count, voters?}]`, `silent: string[]`, `dissents: [{name, harness?, note}]`, `challengeRefs: (string|number)[]`. */
+  /** `options: [{option, count, voters?: ({name, grantRevokedBeforeClose?}|string)[]}]`, `silent: string[]`, `dissents: [{name, harness?, note}]`, `challengeRefs: (string|number)[]`. */
   static data = ['options', 'silent', 'dissents', 'challengeRefs'];
 
   static styles = `
@@ -97,13 +97,22 @@ export class DecisionCard extends QuorumElement {
     if (!summary) {
       const body = h('tbody', {});
       for (const row of this.list('options')) {
+        const voters = (row.voters ?? []).map((/** @type {any} */ voter) => {
+          // String voters remain supported for standalone design specimens.
+          // Product records use the structured form so the immutable
+          // revoked-before-close context cannot disappear at the UI boundary.
+          if (typeof voter === 'string') return voter;
+          return voter.grantRevokedBeforeClose
+            ? `${voter.name} (grant revoked before close)`
+            : voter.name;
+        });
         body.append(
           h(
             'tr',
             {},
             h('td', { class: 'option' }, row.option),
             // Voters are named only after close — during voting there is nothing to name.
-            h('td', { class: 'voters' }, row.voters ? row.voters.join(', ') : ''),
+            h('td', { class: 'voters' }, voters.join(', ')),
             h('td', { class: 'count' }, String(row.count ?? 0)),
           ),
         );

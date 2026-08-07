@@ -138,7 +138,13 @@ export interface DecisionOptionResult {
   option: string;
   count: number;
   /** Revealed only after close. */
-  voters?: string[];
+  voters?: (string | DecisionVoter)[];
+}
+
+export interface DecisionVoter {
+  name: string;
+  /** True only when the credential used for this ballot was revoked before close. */
+  grantRevokedBeforeClose?: true;
 }
 
 export interface RecordedDissent {
