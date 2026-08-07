@@ -17,8 +17,9 @@ import { ballotHint, countdown, phaseNote, quorumOf, turnoutNote } from './overl
  * @param {any} room           the room it runs in
  * @param {{now: number, pick: string|null, cast: string|null, record: any,
  *          notice: string|null, me: {id: string, name: string}|null,
- *          composer: HTMLElement}} ui   pick/cast are this person's own
- *          knowledge (D6-safe); the composer is owned by the controller
+ *          composer: HTMLElement, ballot: HTMLElement}} ui   pick/cast are
+ *          this person's own knowledge (D6-safe); the composer and stable
+ *          ballot panel are owned by the controller
  * @param {{close: () => void, pick: (option: string) => void, cast: () => void,
  *          closeChallenges: () => void}} on
  */
@@ -87,7 +88,7 @@ export function overlayView(state, d, room, ui, on) {
     }),
   );
 
-  const body = terminal ? terminalBody(d, ui.record) : liveBody(state, d, ui, on, { quorum, eligible, castBy });
+  const body = terminal ? terminalBody(d, ui.record) : liveBody(state, d, ui, on);
 
   return h(
     'div',
@@ -135,9 +136,8 @@ function terminalBody(d, record) {
 
 /**
  * @param {import('./store.js').State} state @param {any} d @param {any} ui @param {any} on
- * @param {{quorum: number, eligible: string[], castBy: string[]}} derived
  */
-function liveBody(state, d, ui, on, { quorum, eligible, castBy }) {
+function liveBody(state, d, ui, on) {
   const voting = d.phase === 'voting';
   const challenges = (state.messages.get(d.roomId) ?? []).filter((m) => m.deliberationId === d.id);
 
@@ -179,81 +179,67 @@ function liveBody(state, d, ui, on, { quorum, eligible, castBy }) {
         ),
   );
 
+  return h('div', { class: 'ov-body' }, left, ui.ballot);
+}
+
+/**
+ * The stable right-hand panel. The controller keeps its host node alive and
+ * replaces these children only when a displayed ballot fact changes (#60).
+ * @param {import('./store.js').State} state @param {any} d @param {any} room
+ * @param {any} ui @param {any} on
+ */
+export function ballotView(state, d, room, ui, on) {
+  const voting = d.phase === 'voting';
+  const eligible = Array.isArray(d.eligible) ? d.eligible : [];
+  const castBy = d.castBy ?? [];
+  const quorum = quorumOf(room?.decisionRule, eligible.length);
   const chips = h('div', { class: 'ov-options' });
   for (const option of d.options ?? []) {
-    chips.append(
-      h('q-vote-chip', {
-        option,
-        selected: (ui.pick ?? ui.cast) === option || null,
-        interactive: voting || null,
-        onselect: () => on.pick(option),
-      }),
-    );
+    chips.append(h('q-vote-chip', {
+      option,
+      selected: (ui.pick ?? ui.cast) === option || null,
+      interactive: voting || null,
+      onselect: () => on.pick(option),
+    }));
   }
-
   const castLabel = !ui.pick ? 'Select an option'
     : !ui.cast ? `Cast ballot: ${ui.pick}`
     : ui.pick === ui.cast ? `Ballot cast: ${ui.pick}`
     : `Re-cast ballot: ${ui.pick}`;
-
   const roster = h('div', { class: 'ov-roster' });
   for (const id of eligible) {
     const person = participant(state, id);
-    roster.append(
-      h(
-        'div',
-        { class: 'ov-voter' },
-        h('q-identity-chip', {
-          name: person?.name ?? id,
-          harness: person?.harness === 'human' ? null : person?.harness,
-          kind: person?.harness === 'human' ? 'human' : 'agent',
-          size: 'sm',
-        }),
-        d.phase === 'challenging'
-          ? null
-          : h('q-vote-chip', { size: 'sm', 'ballot-hidden': castBy.includes(id) || null, pending: !castBy.includes(id) || null }),
-      ),
-    );
+    roster.append(h('div', { class: 'ov-voter' },
+      h('q-identity-chip', {
+        name: person?.name ?? id,
+        harness: person?.harness === 'human' ? null : person?.harness,
+        kind: person?.harness === 'human' ? 'human' : 'agent',
+        size: 'sm',
+      }),
+      d.phase === 'challenging' ? null
+        : h('q-vote-chip', { size: 'sm', 'ballot-hidden': castBy.includes(id) || null, pending: !castBy.includes(id) || null }),
+    ));
   }
-
-  const right = h(
-    'div',
-    { class: 'ov-ballot' },
-    h(
-      'div',
-      {},
+  return h('div', { class: 'ov-ballot' },
+    h('div', {},
       h('div', { class: 'label ov-gap' }, 'your ballot'),
       chips,
-      voting
-        ? h(
-            'button',
-            {
-              type: 'button',
-              class: 'ov-cast',
-              disabled: !ui.pick || ui.pick === ui.cast || null,
-              onclick: on.cast,
-            },
-            castLabel,
-          )
-        : null,
+      voting ? h('button', {
+        type: 'button', class: 'ov-cast',
+        disabled: !ui.pick || ui.pick === ui.cast || null,
+        onclick: on.cast,
+      }, castLabel) : null,
       ui.notice ? h('div', { class: 'ov-notice' }, ui.notice) : null,
       h('div', { class: 'quiet ov-gap-t' }, ballotHint(d.phase, ui.cast != null)),
     ),
-    h(
-      'div',
-      {},
+    h('div', {},
       h('div', { class: 'label ov-gap' }, `ballots in · ${castBy.length} of ${eligible.length}`),
       roster,
-      h(
-        'div',
-        { class: `quiet ov-gap-t${castBy.length >= eligible.length ? ' ov-full' : ''}` },
-        turnoutNote(d.phase, castBy.length, quorum, eligible.length),
-      ),
+      h('div', { class: `quiet ov-gap-t${castBy.length >= eligible.length ? ' ov-full' : ''}` },
+        turnoutNote(d.phase, castBy.length, quorum, eligible.length)),
     ),
     d.phase === 'challenging' && ui.me && ui.me.id === d.convenerId
       ? h('button', { type: 'button', class: 'ov-resolve', onclick: on.closeChallenges }, 'Close challenges → open voting')
       : null,
   );
-
-  return h('div', { class: 'ov-body' }, left, right);
 }

@@ -118,7 +118,7 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
     },
   };
 
-  const render = () => {
+  const render = (/** @type {any} */ event = null) => {
     const current = roomByName(state, openRoom);
     occupants.me = me;
     regions.sidebar?.replaceChildren(sidebarView(state, openRoom, pick, occupants));
@@ -141,7 +141,7 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
     // survive a repaint.
     Object.assign(composer, composerProps(current, me, notice));
     renderRoster();
-    overlay.render();
+    overlay.render(event);
   };
 
   // Split out because the clock re-renders only this region — repainting the
@@ -167,7 +167,7 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
     const next = apply(state, event);
     if (next === state) return; // stale or unknown-and-inert: nothing to redraw
     state = next;
-    render();
+    render(event);
   };
 
   /** @param {string} name */
