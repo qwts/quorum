@@ -100,6 +100,27 @@ test('the phase conceals an option\'s tally and never its label', () => {
   }
 });
 
+test('identity presence notes are verbatim, neutral, advisory, and screen-owned nowhere (#67)', () => {
+  const chip = read('components', 'identity-chip.js');
+  const contract = read('elements.d.ts');
+  const views = read('kit', 'app/views.js');
+  const noteRule = /\.note \{([^}]+)\}/.exec(chip)?.[1] ?? '';
+
+  assert.match(chip, /'status', 'note', 'noteKind'/, 'both camelCase properties are observed and re-render');
+  assert.match(noteRule, /border-left: var\(--border-width-accent\) solid transparent/);
+  assert.match(noteRule, /color: var\(--text-muted\); font: var\(--type-mono\)/);
+  assert.doesNotMatch(noteRule, /--hue|--phase|--id-|text-overflow|line-clamp|max-height/, 'the note has neither hue nor truncation');
+  assert.match(chip, /\.note\.blocked \{ border-left-color: var\(--line-strong\)/);
+  assert.match(chip, /\.note-kind \{[\s\S]*var\(--text-meta\)[\s\S]*var\(--type-label\)[\s\S]*var\(--ls-caps\)/);
+  assert.match(chip, /:host\(\[status="waiting"\]\) \.dot/, 'the server-derived waiting dot keeps its own selector');
+  assert.doesNotMatch(chip, /status="waiting"[^\n]*\.note|\[note\][^\n]*\.dot/, 'the two signals do not depend on each other');
+
+  assert.match(contract, /note\?: string/);
+  assert.match(contract, /noteKind\?: 'status' \| 'blocked'/);
+  assert.equal((views.match(/'note-kind':/g) ?? []).length, 2, 'roster and occupants both pass the component contract');
+  assert.doesNotMatch(views, /blocked:/, 'screens no longer prefix or style the participant text themselves');
+});
+
 test('screen code contains no literal colour, size or duration', () => {
   // The acceptance criterion, mechanised: an agent building a screen should
   // never have had to choose a value, so a literal is evidence it did.

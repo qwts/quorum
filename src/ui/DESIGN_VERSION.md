@@ -7,8 +7,8 @@ discovered.** This file is the receipt. Copy it into the library root and keep i
 
 ```
 design_system: quorum-design-system
-design_version: 0.4.0
-captured_at: 2026-07-28
+design_version: 0.5.0
+captured_at: 2026-08-07
 source_project: Quorum Design System (Anthropic Design tool)
 upstream_repo: qwts/quorum (branch main)
 components: 8          # MessageRow, IdentityChip, ProposalCard, PhaseStepper, VoteChip, DissentBadge, DecisionCard, Composer
@@ -16,6 +16,12 @@ screens: 6             # room, deliberation, overlay, records, dm, connect
 tokens: 139
 foundation_cards: 17
 ```
+
+`0.5.0` adds `IdentityChip.note` and `noteKind` (`status` | `blocked`) for participant-authored
+advisory presence. A blocked note gains an uppercase neutral label and `--line-strong` rail; a
+status note keeps the same alignment with a transparent rail. Neither carries hue or protocol
+authority, and both are independent of the server-derived `status="waiting"` dot. This closes Q15
+without adding a component or token.
 
 `0.4.0` is the receipt for the live components the 0.3.0 receipt had drifted from (#38), plus the
 2026-07-28 rulings on #19. One removal, called out first: **VoteChip's `ballot` union is gone** — a
@@ -43,7 +49,7 @@ Record the version the library implements, next to the code:
 
 ```json
 // src/ui/design-version.json
-{ "implements": "0.4.0", "verified": "2026-07-28" }
+{ "implements": "0.5.0", "verified": "2026-08-07" }
 ```
 
 ## Sync procedure
@@ -70,3 +76,4 @@ Record the version the library implements, next to the code:
 | 0.2.0 | 2026-07-25 | failure kinds typed; `phase_ends_at`; derived/frozen quorum; private refusals; challenge-copy rule; deliberation overlay | — |
 | 0.3.0 | 2026-07-26 | `Composer` promoted to a primitive (8th component): message-not-ballot rule, `phase`/`phaseEndsAt`, private `notice`, `disabled` + `disabledReason`. No token or prop changes. | — |
 | 0.4.0 | 2026-07-28 | live-component receipt (#38): VoteChip `ballot`→`choice` (removal), `pending`; PhaseStepper `failureKind`; ProposalCard frozen-roster props; DecisionCard `reason`/`challengeRefs`/`onOpen`. Rulings: Q6 copy follows D6; Q10 `hidden` = ballot secrecy only, `ProposalOption.hidden` removed. | 0.4.0 |
+| 0.5.0 | 2026-08-07 | IdentityChip `note` / `noteKind` advisory presence line; neutral blocked label and rail; independent of `status="waiting"`. Q15 closed. No token or component changes. | 0.5.0 |

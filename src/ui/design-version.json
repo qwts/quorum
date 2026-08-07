@@ -1,7 +1,7 @@
 {
   "designSystem": "quorum-design-system",
-  "implements": "0.4.0",
-  "verified": "2026-07-28",
+  "implements": "0.5.0",
+  "verified": "2026-08-07",
   "source": "Quorum Design System live receipt (project-root DESIGN_VERSION.md), succeeding the 0.3.0 handoff attached to qwts/quorum#13",
   "components": 8,
   "tokens": 139,
@@ -19,5 +19,5 @@
       "kind": "adaptation"
     }
   ],
-  "note": "0.4.0 is the live-component receipt (qwts/quorum#38): VoteChip `ballot`→`choice` plus `pending`, PhaseStepper `failureKind`, ProposalCard frozen-roster props, DecisionCard `reason`/`challengeRefs` — all already implemented here — plus the 2026-07-28 rulings on qwts/quorum#19: Q6 ballot copy follows D6, and Q10 `hidden` is ballot secrecy only (`ProposalOption.hidden` removed upstream; this library's proposal-card already conceals the tally, never the label)."
+  "note": "0.5.0 adds IdentityChip `note` / `noteKind` for participant-authored advisory presence and closes Q15. The neutral blocked label and rail carry no hue or protocol authority, and remain independent of the server-derived `status=waiting` dot. It succeeds the 0.4.0 live-component receipt and its Q6/Q10 rulings without removing or renaming anything."
 }

@@ -257,7 +257,13 @@ asked for a name once`.
 - **Blocking?** no for alpha; **yes for the acceptance walk (#21)**, which
   traces 1.1 #9 in full.
 
-### Q15 — Roster presence lines (/status, /blocked) have no designed treatment
+### Q15 — Roster presence lines (/status, /blocked) have no designed treatment — **CLOSED 2026-08-07**
+
+> Resolved upstream in design 0.5.0. `IdentityChip` gains `note` plus
+> `noteKind: 'status' | 'blocked'`: blocked uses an uppercase neutral label and
+> `--line-strong` rail, status uses a transparent rail for identical alignment,
+> and neither gains a hue. The participant-authored note is advisory, rendered
+> verbatim as text, and independent of the server-derived `status="waiting"` dot.
 
 - **Where:** the room screen roster; #52 gives participants an advisory
   status ("what I am doing") and a blocked state ("stuck, and on what").
@@ -265,9 +271,9 @@ asked for a name once`.
   roster identity, and a visually distinct treatment for blocked — the
   design system ships `q-identity-chip` with no status affordance and no
   blocked variant.
-- **What I did instead:** a `.quiet` text line under the chip, prefixed
-  `blocked:` for the blocked kind — existing styles arranged, no new
-  visual invented.
+- **What I did instead:** before 0.5.0, a `.quiet` text line under the chip,
+  prefixed `blocked:` for the blocked kind — existing styles arranged, no new
+  visual invented. The component treatment now replaces that stopgap.
 - **Blocking?** no; the data flows and the words are on screen. A designed
   treatment (and whether blocked deserves color) is a design-lane call.
 - **Since #17:** the question is bigger than this entry describes, and its
@@ -277,4 +283,4 @@ asked for a name once`.
   `offline` + `blocked` is a legal, meaningful pair. `unknown` renders as it
   does today: nothing. Meanings and legal combinations are in
   [docs/design/presence.md](../../docs/design/presence.md); what to draw is
-  still this question.
+  now lives in the component; the two axes remain independent.
