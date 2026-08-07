@@ -60,6 +60,10 @@ const EXCEPTIONS: Record<string, { limit: number; why: string }> = {
     limit: 580,
     why: 'The protocol state machine. Its phases only make sense read together; the seams it does have are documented in docs/deliberation.md §8. Issue #73 adds the ballot-session write and close-time immutable-record annotation at those two phase boundaries; extracting either would hide the D6/D9 transaction it must share.',
   },
+  'src/ui/kit/app/room-overlay.js': {
+    limit: 300,
+    why: 'The overlay lifecycle keeps URL state, immutable-record loading, the persistent challenge composer, and the stable ballot-panel boundary together. Issue #60 splits the ballot selection fold and panel renderer into their own modules; what remains here is the coordination that prevents an event echo from rebuilding either live control.',
+  },
   'src/mcp/tools.ts': {
     limit: 855,
     why: 'Hand-written JSON Schema, which is verbose by choice — the wire contract is the product (AGENTS.md), so it reads as the contract it is rather than being generated. Ratcheted down when the DM family moved to dms.ts (#42); grew list_open_deliberations (#35), then identify\'s asserted provenance inputs (#50) — the contract for an input belongs beside the tool it is an input to, then the delivery footers (#51), then the two presence clauses (#17), which belong beside the guidance they qualify: a file of their own would separate a sentence from the reply it is a sentence in.',

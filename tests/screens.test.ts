@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { ballotHint, countdown, phaseNote, quorumOf, turnoutNote } from '../src/ui/kit/app/overlay-model.js';
+import { applyBallotSelection, ballotPanelKey, emptyBallotSelection, selectedBallot } from '../src/ui/kit/app/ballot-selection.js';
 import { paintRoom } from '../src/ui/kit/app/api.js';
 import { commandsFor } from '../src/ui/kit/app/connect-model.js';
 import { applyDm, emptyDm } from '../src/ui/kit/app/dm-model.js';
@@ -41,6 +42,56 @@ test('the overlay copy carries the Q6 ruling: re-cast until the phase closes, th
   assert.equal(turnoutNote('challenging', 0, 4, 6), 'that a ballot exists is public; what it says is not');
   assert.match(turnoutNote('voting', 2, 4, 6), /4 of 6 eligible · 4 yet to cast/);
   assert.match(turnoutNote('voting', 6, 4, 6), /full turnout/);
+});
+
+test('a re-cast stays selected across its acknowledgement and event echoes (#60)', () => {
+  let ballot = applyBallotSelection(emptyBallotSelection(), { kind: 'acknowledged', option: 'A' });
+  ballot = applyBallotSelection(ballot, { kind: 'echo', own: true });
+  ballot = applyBallotSelection(ballot, { kind: 'pick', option: 'B' });
+  const seen = [selectedBallot(ballot)];
+
+  // A late acknowledgement and echo for the old cast cannot restore A after
+  // B was picked while api.vote(A) was still in flight.
+  ballot = applyBallotSelection(ballot, { kind: 'acknowledged', option: 'A' });
+  assert.equal(ballot.cast, 'A', 'the server acknowledgement is still recorded');
+  assert.equal(ballot.pick, 'B', 'but it cannot overwrite the newer local pick');
+  seen.push(selectedBallot(ballot));
+  ballot = applyBallotSelection(ballot, { kind: 'echo', own: true });
+  seen.push(selectedBallot(ballot));
+  ballot = applyBallotSelection(ballot, { kind: 'acknowledged', option: 'B' });
+  seen.push(selectedBallot(ballot));
+  assert.equal(ballot.awaitingOwnEcho, true);
+
+  // Other voters' echoes and then our own confirmation leave B authoritative.
+  ballot = applyBallotSelection(ballot, { kind: 'echo', own: false });
+  seen.push(selectedBallot(ballot));
+  const beforeOwnEcho = ballotPanelKey(
+    { participants: new Map() },
+    { id: 'd1', phase: 'voting', options: ['A', 'B'], eligible: [], castBy: [] },
+    { decisionRule: 'majority' }, ballot, null, { id: 'me' },
+  );
+  ballot = applyBallotSelection(ballot, { kind: 'echo', own: true });
+  seen.push(selectedBallot(ballot));
+  assert.deepEqual(seen, ['B', 'B', 'B', 'B', 'B', 'B'], 'no frame can select the previous option');
+  assert.equal(ballot.awaitingOwnEcho, false);
+  assert.equal(
+    ballotPanelKey(
+      { participants: new Map() },
+      { id: 'd1', phase: 'voting', options: ['A', 'B'], eligible: [], castBy: [] },
+      { decisionRule: 'majority' }, ballot, null, { id: 'me' },
+    ),
+    beforeOwnEcho,
+    'an ordering-only echo does not redraw the stable ballot panel',
+  );
+  assert.notEqual(
+    ballotPanelKey(
+      { participants: new Map() },
+      { id: 'd1', phase: 'voting', options: ['A', 'B'], eligible: [], castBy: ['other'] },
+      { decisionRule: 'majority' }, ballot, null, { id: 'me' },
+    ),
+    beforeOwnEcho,
+    'a displayed turnout change does redraw the panel',
+  );
 });
 
 test('the fold tracks who has cast — never what they chose', () => {
