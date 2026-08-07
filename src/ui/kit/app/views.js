@@ -87,20 +87,10 @@ export function rosterView(state, atMs) {
         kind: person.harness === 'human' ? 'human' : 'agent',
         repo: person.repo,
         branch: person.branch,
+        note: person.status?.text,
+        'note-kind': person.status?.kind,
       }),
     );
-    // Advisory presence (#52 /status, /blocked) — a quiet line under the
-    // chip. A designed treatment is Q15 in QUESTIONS.md; until then this
-    // arranges existing text styles rather than inventing a visual.
-    if (person.status) {
-      chips.append(
-        h(
-          'div',
-          { class: 'quiet' },
-          person.status.kind === 'blocked' ? `blocked: ${person.status.text}` : person.status.text,
-        ),
-      );
-    }
   }
   roster.append(chips);
 
@@ -189,11 +179,13 @@ export function sidebarView(state, openRoom, onPick, occupants) {
             h(
               'div',
               { class: 'occupant' },
-              h('span', {}, person?.name ?? 'unknown'),
-              person && person.harness !== 'human' ? h('span', { class: 'quiet' }, ` ${person.harness}`) : null,
-              person?.status
-                ? h('span', { class: 'quiet' }, ` — ${person.status.kind === 'blocked' ? 'blocked: ' : ''}${person.status.text}`)
-                : null,
+              h('q-identity-chip', {
+                name: person?.name ?? 'unknown',
+                harness: person?.harness === 'human' ? null : person?.harness,
+                kind: person?.harness === 'human' ? 'human' : 'agent',
+                note: person?.status?.text,
+                'note-kind': person?.status?.kind,
+              }),
             ),
           );
         }
