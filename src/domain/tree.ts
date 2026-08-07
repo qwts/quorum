@@ -95,20 +95,24 @@ export function openTree(deps: Deps & { sessions: Sessions }) {
 
   function killGrants(grantIds: string[], principalIds: string[] = []): { sessions: string[]; claims: string[] } {
     const ended: string[] = [];
-    const principals = new Set(principalIds);
+    // A leaf revocation frees claims only after its principal's final usable
+    // grant; principal/account revocation always frees them.
+    const closeClaimsFor = new Set(principalIds);
+    const affectedPrincipals = new Set<string>();
     for (const grantId of grantIds) {
-      const row = db.prepare('SELECT principal_id, revoked_at FROM grants WHERE id = ?').get(grantId) as
-        | { principal_id: string; revoked_at: number | null }
-        | undefined;
+      const row = db.prepare('SELECT principal_id, revoked_at FROM grants WHERE id = ?').get(grantId) as { principal_id: string; revoked_at: number | null } | undefined;
       if (!row) continue;
-      principals.add(row.principal_id);
+      affectedPrincipals.add(row.principal_id);
       if (row.revoked_at === null) {
         db.prepare('UPDATE grants SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL').run(now(), grantId);
         ended.push(...sessions.endAll(grantId, 'revoked'));
       }
     }
-    const holders = [...principals].flatMap(participantsFor);
-    return { sessions: ended, claims: [...holders].flatMap(closeClaimsForParticipant) };
+    for (const principalId of affectedPrincipals) {
+      const usable = db.prepare('SELECT 1 FROM grants WHERE principal_id = ? AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ?) LIMIT 1').get(principalId, now());
+      if (!usable) closeClaimsFor.add(principalId);
+    }
+    return { sessions: ended, claims: [...closeClaimsFor].flatMap(participantsFor).flatMap(closeClaimsForParticipant) };
   }
 
   function killPrincipals(principalIds: string[]): { grants: string[]; sessions: string[]; claims: string[] } {

@@ -185,6 +185,29 @@ test('grant revocation frees only live claims once and preserves every other clo
   rmSync(dir, { recursive: true, force: true });
 });
 
+test('revoking one grant preserves claims while a sibling grant remains usable', () => {
+  const { quorum } = fresh();
+  const ada = boundIdentity(quorum, 'ada-siblings');
+  const sibling = quorum.identity.mint({ name: ada.principal.name });
+  const held = quorum.claimScope({
+    participantId: ada.participant.id,
+    repo: 'quorum',
+    patterns: ['src/siblings/**'],
+    purpose: 'work still authorized through the sibling grant',
+  });
+  assert.equal(held.ok, true);
+
+  const first = quorum.identity.revokeGrant(ada.grant.id);
+  assert.deepEqual(first.claims, [], 'one revoked credential cannot free its principal\'s participant work');
+  assert.equal(quorum.listClaims().length, 1);
+  assert.equal(quorum.identity.verify(sibling.token).ok, true, 'the sibling remains usable');
+
+  const last = quorum.identity.revokeGrant(sibling.grant.id);
+  assert.deepEqual(last.claims, held.ok ? [held.claim.id] : [], 'the final usable credential frees the work');
+  assert.equal(quorum.listClaims().length, 0);
+  quorum.close();
+});
+
 test('principal and account cascades close each bound participant claim exactly once', () => {
   const { quorum } = fresh();
   const ada = boundIdentity(quorum, 'ada');
