@@ -374,6 +374,11 @@ export function openQuorum(options: QuorumOptions = {}) {
     return now() + Math.round(ttl * 1000);
   }
 
+  // Identity composes over the same db and feed (ADR-0001): accounts,
+  // principals, grants, and sessions. It is transport-free — the check that a
+  // request carries a good credential lives at one seam in src/http/auth.ts.
+  const identity = openIdentity({ db, now, appendEvent });
+
   // The deliberation protocol composes over the same db and feed; the Deps
   // object is the entire seam (docs/deliberation.md §8).
   const deliberations = openDeliberations({
@@ -384,18 +389,13 @@ export function openQuorum(options: QuorumOptions = {}) {
     requireRoom,
     roomById: (id) => roomById(db, id),
     isMember,
+    grantRevokedAt: (sessionId) => identity.attributionOf(sessionId)?.grant.revokedAt ?? null,
     VISIBLE_ROOMS,
   });
 
   // Direct messages compose the same way; their events are audience-scoped
   // through the appendEvent they are handed (docs/deliberation.md §8 seams).
   const dms = openDms({ db, now, appendEvent, requireParticipant });
-
-  // Identity composes the same way (ADR-0001): accounts, principals, grants,
-  // and sessions over the same db and feed. It is transport-free — the check
-  // that a request carries a good credential lives at one seam in
-  // src/http/auth.ts, which asks these questions of this object.
-  const identity = openIdentity({ db, now, appendEvent });
 
   // Presence reads those same session rows and writes nothing (#17). It is
   // composed here rather than inside identity because it answers the roster's
