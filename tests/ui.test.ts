@@ -170,6 +170,23 @@ test('no component can render a participant message as markup', () => {
   }
 });
 
+test('a revoked-ballot marker cannot be mistaken for participant-authored name text (#73)', () => {
+  const card = read('components', 'decision-card.js');
+
+  assert.match(card, /h\('span', \{ class: 'voter-name' \}, name\)/, 'the participant name owns its own text node');
+  assert.match(
+    card,
+    /h\('span', \{ class: 'revocation-marker' \}, 'grant revoked before close'\)/,
+    'the server-authored marker owns a separate element',
+  );
+  assert.match(card, /\.revocation-marker \{[\s\S]*border: 1px solid currentColor/, 'the marker is visibly badge-like');
+  assert.doesNotMatch(
+    card,
+    /`\$\{voter\.name\}[^`]*grant revoked before close/,
+    'participant-authored text is never concatenated with the server-authored marker',
+  );
+});
+
 test('the UI is served from src/ui and nowhere else', async () => {
   const asked = async (pathname: string, method = 'GET') => {
     const req = { method, headers: {} } as IncomingMessage;
