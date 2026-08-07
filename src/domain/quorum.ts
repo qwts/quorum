@@ -275,6 +275,26 @@ export function openQuorum(options: QuorumOptions = {}) {
     return rows.map(toClaim);
   }
 
+  function closeClaimsForParticipant(participantId: string): string[] {
+    const at = now();
+    const rows = db
+      .prepare(
+        'SELECT * FROM claims WHERE participant_id = ? AND closed_at IS NULL AND expires_at > ? ORDER BY granted_at, rowid',
+      )
+      .all(participantId, at) as ClaimRow[];
+    const closed: string[] = [];
+    for (const row of rows) {
+      const update = db
+        .prepare('UPDATE claims SET closed_at = ?, closed_reason = ? WHERE id = ? AND closed_at IS NULL')
+        .run(at, 'revoked', row.id);
+      if (update.changes === 0n || update.changes === 0) continue;
+      const claim = toClaim(row);
+      appendEvent('claim_revoked', null, { claim }, null);
+      closed.push(claim.id);
+    }
+    return closed;
+  }
+
   function nextExpiryAt(): number | null {
     const row = db
       .prepare('SELECT MIN(expires_at) AS next FROM claims WHERE closed_at IS NULL')
@@ -377,7 +397,7 @@ export function openQuorum(options: QuorumOptions = {}) {
   // Identity composes over the same db and feed (ADR-0001): accounts,
   // principals, grants, and sessions. It is transport-free — the check that a
   // request carries a good credential lives at one seam in src/http/auth.ts.
-  const identity = openIdentity({ db, now, appendEvent });
+  const identity = openIdentity({ db, now, appendEvent, closeClaimsForParticipant });
 
   // The deliberation protocol composes over the same db and feed; the Deps
   // object is the entire seam (docs/deliberation.md §8).

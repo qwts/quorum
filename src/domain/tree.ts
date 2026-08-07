@@ -54,7 +54,7 @@ type AttributionRow = {
 };
 
 export function openTree(deps: Deps & { sessions: Sessions }) {
-  const { db, now, appendEvent, sessions } = deps;
+  const { db, now, appendEvent, closeClaimsForParticipant, sessions } = deps;
 
   // The root, seeded on first use. The first *live* account, because Phase 1's
   // root is the operator running this process: there is no authority above
@@ -72,16 +72,42 @@ export function openTree(deps: Deps & { sessions: Sessions }) {
     return account;
   }
 
-  function killGrants(grantIds: string[]): string[] {
-    const ended: string[] = [];
-    for (const grantId of grantIds) {
-      db.prepare('UPDATE grants SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL').run(now(), grantId);
-      ended.push(...sessions.endAll(grantId, 'revoked'));
-    }
-    return ended;
+  function participantFor(principalId: string): string | null {
+    const row = db
+      .prepare('SELECT id FROM participants WHERE principal_id = ? ORDER BY identified_at DESC, rowid DESC LIMIT 1')
+      .get(principalId) as { id: string } | undefined;
+    return row?.id ?? null;
   }
 
-  function killPrincipals(principalIds: string[]): { grants: string[]; sessions: string[] } {
+  function transact<T>(mutation: () => T): T {
+    db.exec('BEGIN');
+    try {
+      const result = mutation();
+      db.exec('COMMIT');
+      return result;
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  function killGrants(grantIds: string[]): { sessions: string[]; claims: string[] } {
+    const ended: string[] = [];
+    const holders = new Set<string>();
+    for (const grantId of grantIds) {
+      const row = db.prepare('SELECT principal_id FROM grants WHERE id = ? AND revoked_at IS NULL').get(grantId) as
+        | { principal_id: string }
+        | undefined;
+      if (!row) continue;
+      db.prepare('UPDATE grants SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL').run(now(), grantId);
+      ended.push(...sessions.endAll(grantId, 'revoked'));
+      const participant = participantFor(row.principal_id);
+      if (participant !== null) holders.add(participant);
+    }
+    return { sessions: ended, claims: [...holders].flatMap(closeClaimsForParticipant) };
+  }
+
+  function killPrincipals(principalIds: string[]): { grants: string[]; sessions: string[]; claims: string[] } {
     const grants: string[] = [];
     for (const principalId of principalIds) {
       db.prepare('UPDATE principals SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL').run(now(), principalId);
@@ -90,7 +116,7 @@ export function openTree(deps: Deps & { sessions: Sessions }) {
         .all(principalId) as { id: string }[];
       grants.push(...live.map((row) => row.id));
     }
-    return { grants, sessions: killGrants(grants) };
+    return { grants, ...killGrants(grants) };
   }
 
   return {
@@ -123,28 +149,32 @@ export function openTree(deps: Deps & { sessions: Sessions }) {
     },
 
     /** Revoking a grant kills its subtree: the credential, and any session on it. */
-    revokeGrant(grantId: string): { sessions: string[] } {
+    revokeGrant(grantId: string): { sessions: string[]; claims: string[] } {
       const row = db.prepare('SELECT id FROM grants WHERE id = ?').get(grantId) as { id: string } | undefined;
       if (!row) throw new QuorumError(`unknown grant: ${JSON.stringify(grantId)}`);
-      const ended = killGrants([grantId]);
-      appendEvent('grant_revoked', null, { grantId, endedSessionIds: ended }, null);
-      return { sessions: ended };
+      return transact(() => {
+        const killed = killGrants([grantId]);
+        appendEvent('grant_revoked', null, { grantId, endedSessionIds: killed.sessions }, null);
+        return killed;
+      });
     },
 
     /** And revoking a principal revokes every grant beneath it (§2). */
-    revokePrincipal(name: string): { grants: string[]; sessions: string[] } {
+    revokePrincipal(name: string): { grants: string[]; sessions: string[]; claims: string[] } {
       const row = db.prepare('SELECT id FROM principals WHERE name = ?').get(name?.trim() ?? '') as
         | { id: string }
         | undefined;
       if (!row) throw new QuorumError(`unknown agent identity: ${JSON.stringify(name)}`);
-      const killed = killPrincipals([row.id]);
-      appendEvent(
-        'principal_revoked',
-        null,
-        { principalId: row.id, grantIds: killed.grants, endedSessionIds: killed.sessions },
-        null,
-      );
-      return killed;
+      return transact(() => {
+        const killed = killPrincipals([row.id]);
+        appendEvent(
+          'principal_revoked',
+          null,
+          { principalId: row.id, grantIds: killed.grants, endedSessionIds: killed.sessions },
+          null,
+        );
+        return killed;
+      });
     },
 
     /**
@@ -152,23 +182,25 @@ export function openTree(deps: Deps & { sessions: Sessions }) {
      * bans the account, not one of the agents it sponsored. Banning the agent
      * while its human sponsors another is choosing the wrong depth.
      */
-    revokeAccount(name: string): { principals: string[]; grants: string[]; sessions: string[] } {
+    revokeAccount(name: string): { principals: string[]; grants: string[]; sessions: string[]; claims: string[] } {
       const account = db.prepare('SELECT id FROM accounts WHERE name = ?').get(name?.trim() ?? '') as
         | { id: string }
         | undefined;
       if (!account) throw new QuorumError(`unknown account: ${JSON.stringify(name)}`);
-      db.prepare('UPDATE accounts SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL').run(now(), account.id);
-      const principals = (
-        db.prepare('SELECT id FROM principals WHERE account_id = ?').all(account.id) as { id: string }[]
-      ).map((row) => row.id);
-      const killed = killPrincipals(principals);
-      appendEvent(
-        'account_revoked',
-        null,
-        { accountId: account.id, principalIds: principals, grantIds: killed.grants, endedSessionIds: killed.sessions },
-        null,
-      );
-      return { principals, ...killed };
+      return transact(() => {
+        db.prepare('UPDATE accounts SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL').run(now(), account.id);
+        const principals = (
+          db.prepare('SELECT id FROM principals WHERE account_id = ?').all(account.id) as { id: string }[]
+        ).map((row) => row.id);
+        const killed = killPrincipals(principals);
+        appendEvent(
+          'account_revoked',
+          null,
+          { accountId: account.id, principalIds: principals, grantIds: killed.grants, endedSessionIds: killed.sessions },
+          null,
+        );
+        return { principals, ...killed };
+      });
     },
 
     /**
@@ -203,10 +235,7 @@ export function openTree(deps: Deps & { sessions: Sessions }) {
 
     /** The participant a principal identified as most recently, if it has yet. */
     participantFor(principalId: string): string | null {
-      const row = db
-        .prepare('SELECT id FROM participants WHERE principal_id = ? ORDER BY identified_at DESC, rowid DESC LIMIT 1')
-        .get(principalId) as { id: string } | undefined;
-      return row?.id ?? null;
+      return participantFor(principalId);
     },
 
     /**

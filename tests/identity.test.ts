@@ -12,9 +12,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 
 import { actingSession } from '../src/domain/acting.ts';
@@ -26,6 +27,13 @@ function fresh(path?: string) {
   let clock = 1_700_000_000_000;
   const quorum = openQuorum({ path, now: () => clock });
   return { quorum, tick: (ms: number) => (clock += ms), at: () => clock };
+}
+
+function boundIdentity(quorum: ReturnType<typeof openQuorum>, name: string) {
+  const minted = quorum.identity.mint({ name: `${name}:principal` });
+  const participant = quorum.identify({ name, harness: 'test' }).participant;
+  quorum.identity.bindParticipant({ participantId: participant.id, principalId: minted.principal.id });
+  return { ...minted, participant };
 }
 
 test('the minted secret is handed back once, and the database keeps only its hash', () => {
@@ -113,6 +121,177 @@ test('revoking a grant ends the session on it, and revoking a principal takes ev
   // cannot be handed a fresh token under the same name (design §5.1).
   assert.throws(() => quorum.identity.mint({ name: 'ada:revoke' }), /revoked/);
   quorum.close();
+});
+
+test('grant revocation frees only live claims once and preserves every other close reason', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'quorum-revoke-claims-'));
+  const path = join(dir, 'quorum.db');
+  const { quorum, tick } = fresh(path);
+  const ada = boundIdentity(quorum, 'ada');
+  const opened = quorum.identity.establish({ grantId: ada.grant.id, source: 'test' });
+  assert.equal(opened.ok, true);
+
+  const claim = (path: string, ttlSeconds = 60) =>
+    quorum.claimScope({ participantId: ada.participant.id, repo: 'quorum', patterns: [path], purpose: path, ttlSeconds });
+  const live = claim('src/live/**');
+  const released = claim('src/released/**');
+  const expired = claim('src/expired/**', 1);
+  assert.ok(live.ok && released.ok && expired.ok);
+  if (!live.ok || !released.ok || !expired.ok) assert.fail('non-overlapping fixture claims must be granted');
+  quorum.releaseClaim({ claimId: released.claim.id, participantId: ada.participant.id });
+  tick(2_000);
+
+  const before = quorum.latestSeq();
+  const killed = quorum.identity.revokeGrant(ada.grant.id);
+  assert.deepEqual(killed.claims, [live.claim.id]);
+  assert.deepEqual(killed.sessions, opened.ok ? [opened.session.id] : []);
+
+  const events = quorum.readEvents({ afterSeq: before });
+  const revoked = events.filter((event) => event.kind === 'claim_revoked');
+  assert.equal(revoked.length, 1);
+  assert.equal(revoked[0]?.actorId, null);
+  assert.deepEqual(revoked[0]?.payload, { claim: live.claim });
+  assert.doesNotMatch(
+    JSON.stringify(revoked.map((event) => event.payload)),
+    /qpat_|"(?:token|token_hash|sessionId|grantId)"/,
+  );
+
+  const again = quorum.identity.revokeGrant(ada.grant.id);
+  assert.deepEqual(again.claims, [], 'a repeated revocation cannot close anything twice');
+  assert.equal(quorum.readEvents({ afterSeq: before }).filter((event) => event.kind === 'claim_revoked').length, 1);
+
+  quorum.listClaims(); // the elapsed lease keeps its own expiry path
+  const grace = quorum.identify({ name: 'grace', harness: 'test' }).participant;
+  const reclaimed = quorum.claimScope({
+    participantId: grace.id,
+    repo: 'quorum',
+    patterns: ['src/live/**'],
+    purpose: 'the revoked scope is free',
+  });
+  assert.equal(reclaimed.ok, true);
+  quorum.close();
+
+  const db = new DatabaseSync(path);
+  const reasons = db.prepare('SELECT id, closed_reason FROM claims WHERE id IN (?, ?, ?)').all(
+    live.claim.id,
+    released.claim.id,
+    expired.claim.id,
+  ) as { id: string; closed_reason: string }[];
+  assert.deepEqual(
+    Object.fromEntries(reasons.map((row) => [row.id, row.closed_reason])),
+    { [live.claim.id]: 'revoked', [released.claim.id]: 'released', [expired.claim.id]: 'expired' },
+  );
+  db.close();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('principal and account cascades close each bound participant claim exactly once', () => {
+  const { quorum } = fresh();
+  const ada = boundIdentity(quorum, 'ada');
+  const secondAda = quorum.identity.mint({ name: 'ada:principal' });
+  const adaClaim = quorum.claimScope({
+    participantId: ada.participant.id,
+    repo: 'quorum',
+    patterns: ['src/ada/**'],
+    purpose: 'ada work',
+  });
+  assert.equal(adaClaim.ok, true);
+  const principal = quorum.identity.revokePrincipal('ada:principal');
+  assert.equal(principal.grants.length, 2);
+  assert.deepEqual(principal.claims, adaClaim.ok ? [adaClaim.claim.id] : []);
+  assert.ok(principal.grants.includes(secondAda.grant.id));
+
+  const grace = boundIdentity(quorum, 'grace');
+  const linus = boundIdentity(quorum, 'linus');
+  const graceClaim = quorum.claimScope({
+    participantId: grace.participant.id,
+    repo: 'quorum',
+    patterns: ['src/grace/**'],
+    purpose: 'grace work',
+  });
+  const linusClaim = quorum.claimScope({
+    participantId: linus.participant.id,
+    repo: 'quorum',
+    patterns: ['src/linus/**'],
+    purpose: 'linus work',
+  });
+  assert.ok(graceClaim.ok && linusClaim.ok);
+  const before = quorum.latestSeq();
+  const account = quorum.identity.revokeAccount('operator');
+  assert.deepEqual(
+    new Set(account.claims),
+    new Set([graceClaim.ok ? graceClaim.claim.id : '', linusClaim.ok ? linusClaim.claim.id : '']),
+  );
+  assert.equal(quorum.readEvents({ afterSeq: before }).filter((event) => event.kind === 'claim_revoked').length, 2);
+  quorum.close();
+});
+
+test('a grant with no bound participant closes no claim', () => {
+  const { quorum } = fresh();
+  const { grant } = quorum.identity.mint({ name: 'unused' });
+  assert.deepEqual(quorum.identity.revokeGrant(grant.id).claims, []);
+  assert.equal(quorum.readEvents().filter((event) => event.kind === 'claim_revoked').length, 0);
+  quorum.close();
+});
+
+test('a failed revocation event rolls the credential and its claim back together', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'quorum-revoke-rollback-'));
+  const path = join(dir, 'quorum.db');
+  try {
+    const quorum = openQuorum({ path });
+    const ada = boundIdentity(quorum, 'ada');
+    const claim = quorum.claimScope({
+      participantId: ada.participant.id,
+      repo: 'quorum',
+      patterns: ['src/**'],
+      purpose: 'must roll back',
+    });
+    assert.equal(claim.ok, true);
+    const raw = new DatabaseSync(path);
+    raw.exec(`
+      CREATE TRIGGER fail_revocation BEFORE INSERT ON events
+      WHEN NEW.kind = 'grant_revoked'
+      BEGIN SELECT RAISE(ABORT, 'forced revocation failure'); END;
+    `);
+    raw.close();
+
+    assert.throws(() => quorum.identity.revokeGrant(ada.grant.id), /forced revocation failure/);
+    assert.equal(quorum.identity.verify(ada.token).ok, true, 'the grant mutation rolled back');
+    assert.deepEqual(quorum.listClaims().map((held) => held.id), claim.ok ? [claim.claim.id] : []);
+    assert.equal(quorum.readEvents().filter((event) => event.kind === 'claim_revoked').length, 0);
+    quorum.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('mint-token reports how many claims a principal revocation freed', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'quorum-revoke-cli-'));
+  const path = join(dir, 'quorum.db');
+  try {
+    const quorum = openQuorum({ path });
+    const ada = boundIdentity(quorum, 'cli-agent');
+    quorum.claimScope({
+      participantId: ada.participant.id,
+      repo: 'quorum',
+      patterns: ['src/**'],
+      purpose: 'visible operator consequence',
+    });
+    quorum.close();
+
+    const run = spawnSync(process.execPath, ['scripts/mint-token.ts', '--revoke', 'cli-agent:principal'], {
+      cwd: join(import.meta.dirname, '..'),
+      env: { ...process.env, QUORUM_DB: path },
+      encoding: 'utf8',
+    });
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, /1 claim\(s\) freed/);
+    const reopened = openQuorum({ path });
+    assert.deepEqual(reopened.listClaims(), []);
+    reopened.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('one live session per grant: a second establishment is refused while the first is alive', () => {
