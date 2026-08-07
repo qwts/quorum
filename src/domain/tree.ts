@@ -72,12 +72,14 @@ export function openTree(deps: Deps & { sessions: Sessions }) {
     return account;
   }
 
-  function participantFor(principalId: string): string | null {
-    const row = db
-      .prepare('SELECT id FROM participants WHERE principal_id = ? ORDER BY identified_at DESC, rowid DESC LIMIT 1')
-      .get(principalId) as { id: string } | undefined;
-    return row?.id ?? null;
+  function participantsFor(principalId: string): string[] {
+    const rows = db
+      .prepare('SELECT id FROM participants WHERE principal_id = ? ORDER BY identified_at, rowid')
+      .all(principalId) as { id: string }[];
+    return rows.map((row) => row.id);
   }
+
+  const participantFor = (principalId: string) => participantsFor(principalId).at(-1) ?? null;
 
   function transact<T>(mutation: () => T): T {
     db.exec('BEGIN');
@@ -91,19 +93,21 @@ export function openTree(deps: Deps & { sessions: Sessions }) {
     }
   }
 
-  function killGrants(grantIds: string[]): { sessions: string[]; claims: string[] } {
+  function killGrants(grantIds: string[], principalIds: string[] = []): { sessions: string[]; claims: string[] } {
     const ended: string[] = [];
-    const holders = new Set<string>();
+    const principals = new Set(principalIds);
     for (const grantId of grantIds) {
-      const row = db.prepare('SELECT principal_id FROM grants WHERE id = ? AND revoked_at IS NULL').get(grantId) as
-        | { principal_id: string }
+      const row = db.prepare('SELECT principal_id, revoked_at FROM grants WHERE id = ?').get(grantId) as
+        | { principal_id: string; revoked_at: number | null }
         | undefined;
       if (!row) continue;
-      db.prepare('UPDATE grants SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL').run(now(), grantId);
-      ended.push(...sessions.endAll(grantId, 'revoked'));
-      const participant = participantFor(row.principal_id);
-      if (participant !== null) holders.add(participant);
+      principals.add(row.principal_id);
+      if (row.revoked_at === null) {
+        db.prepare('UPDATE grants SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL').run(now(), grantId);
+        ended.push(...sessions.endAll(grantId, 'revoked'));
+      }
     }
+    const holders = [...principals].flatMap(participantsFor);
     return { sessions: ended, claims: [...holders].flatMap(closeClaimsForParticipant) };
   }
 
@@ -116,7 +120,7 @@ export function openTree(deps: Deps & { sessions: Sessions }) {
         .all(principalId) as { id: string }[];
       grants.push(...live.map((row) => row.id));
     }
-    return { grants, ...killGrants(grants) };
+    return { grants, ...killGrants(grants, principalIds) };
   }
 
   return {

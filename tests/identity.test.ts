@@ -226,6 +226,45 @@ test('principal and account cascades close each bound participant claim exactly 
   quorum.close();
 });
 
+test('revocation closes claims for every participant row bound to the principal', () => {
+  const { quorum } = fresh();
+  const ada = boundIdentity(quorum, 'ada-mcp');
+  const browser = quorum.identify({ name: 'ada-ui', harness: 'web' }).participant;
+  quorum.identity.bindParticipant({ participantId: browser.id, principalId: ada.principal.id });
+  const mcpClaim = quorum.claimScope({ participantId: ada.participant.id, repo: 'quorum', patterns: ['src/mcp/**'], purpose: 'mcp' });
+  const uiClaim = quorum.claimScope({ participantId: browser.id, repo: 'quorum', patterns: ['src/ui/**'], purpose: 'ui' });
+  assert.ok(mcpClaim.ok && uiClaim.ok);
+
+  const killed = quorum.identity.revokeGrant(ada.grant.id);
+  assert.deepEqual(
+    new Set(killed.claims),
+    new Set([mcpClaim.ok ? mcpClaim.claim.id : '', uiClaim.ok ? uiClaim.claim.id : '']),
+  );
+  assert.equal(quorum.listClaims().length, 0);
+  quorum.close();
+});
+
+test('repeating a pre-upgrade revocation repairs a claim stranded behind it', () => {
+  const { quorum } = fresh();
+  const ada = boundIdentity(quorum, 'ada-history');
+  quorum.identity.revokeGrant(ada.grant.id);
+  const stranded = quorum.claimScope({
+    participantId: ada.participant.id,
+    repo: 'quorum',
+    patterns: ['src/history/**'],
+    purpose: 'fixture for a claim left live by the old cascade',
+  });
+  assert.equal(stranded.ok, true);
+
+  const before = quorum.latestSeq();
+  const repaired = quorum.identity.revokeGrant(ada.grant.id);
+  assert.deepEqual(repaired.claims, stranded.ok ? [stranded.claim.id] : []);
+  assert.equal(repaired.sessions.length, 0, 'the already-revoked grant is not revoked twice');
+  assert.equal(quorum.readEvents({ afterSeq: before }).filter((event) => event.kind === 'claim_revoked').length, 1);
+  assert.equal(quorum.listClaims().length, 0);
+  quorum.close();
+});
+
 test('a grant with no bound participant closes no claim', () => {
   const { quorum } = fresh();
   const { grant } = quorum.identity.mint({ name: 'unused' });
