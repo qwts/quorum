@@ -44,9 +44,13 @@ const EXCEPTIONS: Record<string, { limit: number; why: string }> = {
     limit: 285,
     why: 'The command registry (#52): one entry per command is the design — adding a command touches only this file — so it grows with the vocabulary. Split when a category earns its own file, not before.',
   },
+  'src/domain/tree.ts': {
+    limit: 290,
+    why: 'The identity revocation tree must keep each node mutation, its downward grant and session cascade, the claim-close callback, and the enclosing transaction together. Splitting #74 across modules would make the security invariant look atomic while allowing half a cascade to commit.',
+  },
   'src/domain/quorum.ts': {
-    limit: 880,
-    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany. Grew the audience filter (#42), participant status and command composition (#52), the occupants read (#56), the shared claim-refusal record (#15), and identity (#50) — whose tables live in identity.ts, session.ts, and tree.ts, so what lands here is the composition plus the one line of appendEvent that stamps a session on an action, then delivery guidance (#51) — which must resolve recipients through the same requireParticipant. Held flat by #96, which moved the schema history to migrate.ts and room resolution to authority.ts as it added the visible-set scoping. Presence (#17) is the same shape: the projection is presence.ts, and what lands here is the roster view, which has to be composed beside listParticipants to stay one read.',
+    limit: 900,
+    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany. Grew the audience filter (#42), participant status and command composition (#52), the occupants read (#56), the shared claim-refusal record (#15), and identity (#50) — whose tables live in identity.ts, session.ts, and tree.ts, so what lands here is the composition plus the one line of appendEvent that stamps a session on an action, then delivery guidance (#51), presence (#17), and #74\'s claim-close callback, which must share the claim mutation and event. Held flat where real seams exist: schema history is migrate.ts and room resolution is authority.ts.',
   },
   'src/mcp/server.ts': {
     limit: 285,

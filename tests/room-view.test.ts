@@ -83,14 +83,14 @@ test('folding never mutates what the caller was holding', () => {
   assert.equal(after.rooms.get('r1')!.members, 3);
 });
 
-test('a released or expired claim leaves the roster', () => {
+test('a released, expired, or revoked claim leaves the roster', () => {
   const claim = { id: 'c1', participantId: 'p1', repo: 'quorum', patterns: ['src/**'], purpose: 'x', expiresAt: 5_000 };
   const held = apply(painted(), event(11, 'claim_granted', { claim }));
   assert.equal(liveClaims(held, 0).length, 1);
 
   assert.equal(liveClaims(apply(held, event(12, 'claim_released', { claim })), 0).length, 0);
   assert.equal(liveClaims(apply(held, event(12, 'claim_expired', { claim })), 0).length, 0);
-
+  assert.equal(liveClaims(apply(held, event(12, 'claim_revoked', { claim })), 0).length, 0);
   // Expiry is a clock fact, not only an event: a lease whose time has passed
   // is gone whether or not the sweep has run yet.
   assert.equal(liveClaims(held, 6_000).length, 0);

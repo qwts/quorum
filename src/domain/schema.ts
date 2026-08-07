@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS claims (
   expires_at     INTEGER NOT NULL,
   -- Closed once, never reopened: a lease that ended is history.
   closed_at      INTEGER,
-  closed_reason  TEXT            -- 'released' | 'expired'
+  closed_reason  TEXT            -- 'released' | 'expired' | 'revoked'
 );
 CREATE INDEX IF NOT EXISTS claims_live ON claims (repo, closed_at, expires_at);
 
