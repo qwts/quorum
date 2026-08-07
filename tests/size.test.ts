@@ -53,8 +53,8 @@ const EXCEPTIONS: Record<string, { limit: number; why: string }> = {
     why: 'The endpoint\'s wiring: routing, TLS, the UI and HTTP surfaces, and — with identity (#50) — the credential check at connect and on every later message. The check itself is one shared seam in src/http/auth.ts; what is here is which requests reach it, and that reads as one list on purpose.',
   },
   'src/domain/deliberation.ts': {
-    limit: 570,
-    why: 'The protocol state machine. Its phases only make sense read together; the seams it does have are documented in docs/deliberation.md §8.',
+    limit: 580,
+    why: 'The protocol state machine. Its phases only make sense read together; the seams it does have are documented in docs/deliberation.md §8. Issue #73 adds the ballot-session write and close-time immutable-record annotation at those two phase boundaries; extracting either would hide the D6/D9 transaction it must share.',
   },
   'src/mcp/tools.ts': {
     limit: 855,

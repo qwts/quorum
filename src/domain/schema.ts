@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS ballots (
   choice          INTEGER NOT NULL,
   dissent         TEXT,
   cast_at         INTEGER NOT NULL,
+  session_id      TEXT REFERENCES sessions(id),
   PRIMARY KEY (deliberation_id, participant_id)
 );
 

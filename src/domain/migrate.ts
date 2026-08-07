@@ -132,6 +132,13 @@ export const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    id: 3,
+    name: 'ballots: retain the session behind the surviving cast',
+    up(db) {
+      addColumn(db, 'ballots', 'session_id', 'TEXT REFERENCES sessions(id)');
+    },
+  },
 ];
 
 /**
