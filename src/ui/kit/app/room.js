@@ -12,10 +12,10 @@
 
 import { openFeed } from './feed.js';
 import { api, paintRoom } from './api.js';
-import { ensureIdentified, forget, isStaleIdentity, remembered } from './me.js';
+import { ensureIdentified, remembered } from './me.js';
 import { apply, applyAll, emptyState, liveDeliberations, roomByName, seed } from './store.js';
 import { composerProps } from './composer.js';
-import { createSender } from './posting.js';
+import { createRoomComposerActions } from './room-composer.js';
 import { attachStreamVoting } from './casting.js';
 import { createOverlayController } from './room-overlay.js';
 import { bannerView, proposalView } from './deliberation-views.js';
@@ -53,7 +53,8 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
   // rebuilt from the model on each render, which is only safe because none of
   // them holds anything the person was in the middle of.
   const composer = /** @type {any} */ (doc.createElement('q-composer'));
-  const send = createSender({
+  const { send, propose } = createRoomComposerActions({
+    win,
     room: () => openRoom,
     me: () => me,
     setMe: (who) => { me = who; },
@@ -61,13 +62,6 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
     setDraft: (value) => { composer.value = value; },
     setNotice: (message) => { notice = message; },
     settled: () => render(),
-    // The browser's own prompt: the design system ships no dialog, and a
-    // screen inventing one is the thing this library exists to prevent.
-    identify: () => ensureIdentified({ ask: (message) => win.prompt(message), identify: api.identify }),
-    join: api.join,
-    post: api.post,
-    isStaleIdentity,
-    forget,
   });
   composer.addEventListener('send', (/** @type {any} */ event) => void send(event.detail.value));
 
@@ -139,7 +133,10 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
     // Assigned onto the live element rather than rebuilding it: the composer
     // holds a draft, a caret and focus, and is the one region that must
     // survive a repaint.
-    Object.assign(composer, composerProps(current, me, notice));
+    Object.assign(composer, {
+      ...composerProps(current, me, notice),
+      actions: current ? [{ label: 'propose', accent: true, onClick: () => void propose() }] : [],
+    });
     renderRoster();
     overlay.render(event);
   };

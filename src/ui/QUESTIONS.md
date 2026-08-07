@@ -250,12 +250,14 @@ asked for a name once`.
   browser's own `prompt()` is acceptable platform chrome for the *name*)
   could stretch to three chained prompts, but a three-prompt convening flow
   is a UX decision nobody designed, and copy is normative here.
-- **What I did instead:** did not wire it. Agents convene over MCP (the
-  route and the tool are the same domain call); humans challenge, vote, and
-  read the record through the overlay. Release notes state 1.1 #9 as
-  partial on exactly this line.
-- **Blocking?** no for alpha; **yes for the acceptance walk (#21)**, which
-  traces 1.1 #9 in full.
+- **What I did instead:** the room composer's designed `propose` action now
+  opens native prompts for the question and two-to-ten options, following
+  Q12's platform-chrome precedent. It posts through the same domain route as
+  the MCP tool. No screen-owned dialog, field, or token treatment was
+  invented; replacing the platform prompts remains a design-lane decision.
+- **Blocking?** no for the acceptance walk (#21): a human can convene in the
+  served UI and the HTTP-plus-domain path is covered. **Still open** for a
+  designed multi-field flow before this is called a polished product UX.
 
 ### Q15 — Roster presence lines (/status, /blocked) have no designed treatment — **CLOSED 2026-08-07**
 
