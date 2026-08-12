@@ -168,7 +168,7 @@ test('a migration is applied once, and reopening applies nothing', () => {
     const first = raw.prepare('SELECT id, name, applied_at FROM schema_migrations ORDER BY id').all();
     assert.deepEqual(
       first.map((row) => (row as { id: number }).id),
-      [1, 2],
+      [1, 2, 3],
       'the ledger names every migration this version knows',
     );
 
@@ -187,6 +187,26 @@ test('a migration is applied once, and reopening applies nothing', () => {
       'and reopening leaves the record exactly as it was',
     );
     reopened.close();
+  } finally {
+    cleanup();
+  }
+});
+
+test('a database with pre-attribution ballots gains their nullable session column', () => {
+  const { path, cleanup } = tempDb('quorum-ballot-session-');
+  try {
+    openQuorum({ path, now: clock }).close();
+    const before = new DatabaseSync(path);
+    before.exec('ALTER TABLE ballots DROP COLUMN session_id');
+    before.exec('DELETE FROM schema_migrations WHERE id = 3');
+    before.close();
+
+    openQuorum({ path, now: clock }).close();
+    const after = new DatabaseSync(path);
+    const columns = after.prepare('PRAGMA table_info(ballots)').all() as { name: string }[];
+    assert.ok(columns.some((column) => column.name === 'session_id'));
+    assert.equal(after.prepare('SELECT COUNT(*) AS n FROM schema_migrations WHERE id = 3').get()?.n, 1);
+    after.close();
   } finally {
     cleanup();
   }

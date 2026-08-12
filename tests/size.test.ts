@@ -44,17 +44,25 @@ const EXCEPTIONS: Record<string, { limit: number; why: string }> = {
     limit: 285,
     why: 'The command registry (#52): one entry per command is the design — adding a command touches only this file — so it grows with the vocabulary. Split when a category earns its own file, not before.',
   },
+  'src/domain/tree.ts': {
+    limit: 290,
+    why: 'The identity revocation tree must keep each node mutation, its downward grant and session cascade, the claim-close callback, and the enclosing transaction together. Splitting #74 across modules would make the security invariant look atomic while allowing half a cascade to commit.',
+  },
   'src/domain/quorum.ts': {
-    limit: 880,
-    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany. Grew the audience filter (#42), participant status and command composition (#52), the occupants read (#56), the shared claim-refusal record (#15), and identity (#50) — whose tables live in identity.ts, session.ts, and tree.ts, so what lands here is the composition plus the one line of appendEvent that stamps a session on an action, then delivery guidance (#51) — which must resolve recipients through the same requireParticipant. Held flat by #96, which moved the schema history to migrate.ts and room resolution to authority.ts as it added the visible-set scoping. Presence (#17) is the same shape: the projection is presence.ts, and what lands here is the roster view, which has to be composed beside listParticipants to stay one read.',
+    limit: 900,
+    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany. Grew the audience filter (#42), participant status and command composition (#52), the occupants read (#56), the shared claim-refusal record (#15), and identity (#50) — whose tables live in identity.ts, session.ts, and tree.ts, so what lands here is the composition plus the one line of appendEvent that stamps a session on an action, then delivery guidance (#51), presence (#17), and #74\'s claim-close callback, which must share the claim mutation and event. Held flat where real seams exist: schema history is migrate.ts and room resolution is authority.ts.',
   },
   'src/mcp/server.ts': {
     limit: 285,
     why: 'The endpoint\'s wiring: routing, TLS, the UI and HTTP surfaces, and — with identity (#50) — the credential check at connect and on every later message. The check itself is one shared seam in src/http/auth.ts; what is here is which requests reach it, and that reads as one list on purpose.',
   },
   'src/domain/deliberation.ts': {
-    limit: 570,
-    why: 'The protocol state machine. Its phases only make sense read together; the seams it does have are documented in docs/deliberation.md §8.',
+    limit: 580,
+    why: 'The protocol state machine. Its phases only make sense read together; the seams it does have are documented in docs/deliberation.md §8. Issue #73 adds the ballot-session write and close-time immutable-record annotation at those two phase boundaries; extracting either would hide the D6/D9 transaction it must share.',
+  },
+  'src/ui/kit/app/room-overlay.js': {
+    limit: 300,
+    why: 'The overlay lifecycle keeps URL state, immutable-record loading, the persistent challenge composer, and the stable ballot-panel boundary together. Issue #60 splits the ballot selection fold and panel renderer into their own modules; what remains here is the coordination that prevents an event echo from rebuilding either live control.',
   },
   'src/mcp/tools.ts': {
     limit: 855,

@@ -23,7 +23,7 @@ import { QuorumElement, define, h } from '../lib/element.js';
 export class DecisionCard extends QuorumElement {
   static props = ['recordId', 'question', 'outcome', 'result', 'failureKind', 'decidedAt', 'room', 'decisionRule', 'reason', 'summary', 'variant', 'openable'];
 
-  /** `options: [{option, count, voters?}]`, `silent: string[]`, `dissents: [{name, harness?, note}]`, `challengeRefs: (string|number)[]`. */
+  /** `options: [{option, count, voters?: ({name, grantRevokedBeforeClose?}|string)[]}]`, `silent: string[]`, `dissents: [{name, harness?, note}]`, `challengeRefs: (string|number)[]`. */
   static data = ['options', 'silent', 'dissents', 'challengeRefs'];
 
   static styles = `
@@ -62,6 +62,12 @@ export class DecisionCard extends QuorumElement {
     td { padding: var(--sp-3) 0; }
     td.option { color: var(--paper-ink); font: var(--type-record-body); }
     td.voters { text-align: right; color: var(--paper-ink-2); white-space: nowrap; }
+    .voter { display: inline-flex; align-items: baseline; gap: var(--sp-2); }
+    .revocation-marker {
+      border: 1px solid currentColor; border-radius: var(--radius-xs); padding: 0 var(--sp-2);
+      color: var(--phase-failed); font: var(--type-label); letter-spacing: var(--ls-caps);
+      text-transform: uppercase;
+    }
     td.count { text-align: right; padding-left: var(--sp-5); color: var(--paper-ink); font: var(--type-mono-strong); }
     .silent { border-top: 1px solid var(--paper-300); padding-top: var(--sp-4); }
     .silent .lead {
@@ -97,13 +103,30 @@ export class DecisionCard extends QuorumElement {
     if (!summary) {
       const body = h('tbody', {});
       for (const row of this.list('options')) {
+        const voters = (row.voters ?? []).flatMap((/** @type {any} */ voter, /** @type {number} */ index) => {
+          // String voters remain supported for standalone design specimens.
+          // Product records use the structured form so the immutable
+          // revoked-before-close context cannot disappear at the UI boundary.
+          const name = typeof voter === 'string' ? voter : voter.name;
+          return [
+            index ? ', ' : null,
+            h(
+              'span',
+              { class: 'voter' },
+              h('span', { class: 'voter-name' }, name),
+              typeof voter !== 'string' && voter.grantRevokedBeforeClose
+                ? h('span', { class: 'revocation-marker' }, 'grant revoked before close')
+                : null,
+            ),
+          ];
+        });
         body.append(
           h(
             'tr',
             {},
             h('td', { class: 'option' }, row.option),
             // Voters are named only after close — during voting there is nothing to name.
-            h('td', { class: 'voters' }, row.voters ? row.voters.join(', ') : ''),
+            h('td', { class: 'voters' }, voters),
             h('td', { class: 'count' }, String(row.count ?? 0)),
           ),
         );

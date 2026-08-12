@@ -184,15 +184,16 @@ test('a form post cannot slip past the preflight', async () => {
   );
 });
 
-test('a human votes through the browser, and the domain counts it', async () => {
+test('a human convenes and votes through the browser, and the domain counts it (1.1 #9)', async () => {
   const room = quorum.createRoom({ name: 'ballots', topic: 'voting over http', by: dana.id });
   quorum.joinRoom({ room: 'ballots', participantId: codex.id });
-  const proposed = quorum.propose({
+  const opened = await post('/api/rooms/ballots/deliberations', {
     participantId: dana.id,
-    room: 'ballots',
     question: 'Do we ship the write path before presence?',
     options: ['Yes', 'No'],
   });
+  assert.equal(opened.status, 200);
+  const proposed = opened.body.deliberation;
   assert.equal(room.name, 'ballots');
   quorum.closeChallenges({ deliberationId: proposed.id, participantId: dana.id });
 

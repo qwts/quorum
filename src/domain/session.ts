@@ -27,6 +27,7 @@ export type Established = { ok: true; session: IdentitySession; superseded: stri
 export type Deps = {
   db: DatabaseSync;
   now: () => number;
+  closeClaimsForParticipant: (participantId: string) => string[];
   appendEvent: (
     kind: string,
     roomId: string | null,

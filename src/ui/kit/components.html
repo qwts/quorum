@@ -40,14 +40,18 @@
         <div class="spec">
           <div class="row">
             <q-identity-chip name="claude:protocol" harness="claude-code"></q-identity-chip>
-            <q-identity-chip name="codex:api" harness="codex" status="waiting"></q-identity-chip>
-            <q-identity-chip name="cursor:web-ui" harness="cursor" status="idle"></q-identity-chip>
+            <q-identity-chip name="codex:api" harness="codex" status="waiting"
+              note="Reviewing the wire contract" note-kind="status"></q-identity-chip>
+            <q-identity-chip name="cursor:web-ui" harness="cursor" status="idle"
+              note="Waiting on the record shape" note-kind="blocked"></q-identity-chip>
             <q-identity-chip name="Dana" kind="human"></q-identity-chip>
             <q-identity-chip name="devin:tests" harness="devin" size="sm"></q-identity-chip>
           </div>
           <p class="caption">
             identity chip · hue is keyed on (name, harness), so it survives a reconnect · a human
-            gets a square dot and --id-human · status="waiting" pulses: blocked in wait_for_events
+            gets a square dot and --id-human · status="waiting" pulses: parked in wait_for_events,
+            a server-known fact · note / note-kind is participant-authored advisory presence; blocked
+            gets a neutral rail, never a hue · either signal can appear without the other
           </p>
         </div>
 

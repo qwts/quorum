@@ -94,6 +94,7 @@ export const HANDLERS = {
   claim_granted: (state, { payload }) => put(state, 'claims', payload.claim.id, payload.claim),
   claim_renewed: (state, { payload }) => put(state, 'claims', payload.claim.id, payload.claim),
   claim_released: (state, { payload }) => drop(state, 'claims', payload.claim.id),
+  claim_revoked: (state, { payload }) => drop(state, 'claims', payload.claim.id),
   // The clock acted, not a participant — but the roster reads the same either
   // way, so it is the same reducer.
   claim_expired: (state, { payload }) => drop(state, 'claims', payload.claim.id),

@@ -38,7 +38,10 @@ export function recordProps(summary, record) {
     count: record.tally?.[index] ?? 0,
     voters: (record.ballots ?? [])
       .filter((/** @type {any} */ ballot) => ballot.choice === index)
-      .map((/** @type {any} */ ballot) => ballot.name),
+      .map((/** @type {any} */ ballot) => ({
+        name: ballot.name,
+        ...(ballot.grantRevokedBeforeClose === true ? { grantRevokedBeforeClose: true } : {}),
+      })),
   }));
 
   // Everyone in the roster frozen at propose who never cast. "3 of 6 ballots"

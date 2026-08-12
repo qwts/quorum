@@ -23,7 +23,7 @@ is a design decision with its reason attached; the implementation
 | D3 | The eligible-voter roster is **snapshotted at `propose`** (current room members). Later joiners observe; they do not vote. | A moving roster makes "majority" a moving target and lets a mid-vote join flip an outcome no one deliberated with. |
 | D4 | Challenges are **ordinary messages carrying a `deliberation_id` tag**. Deliberation state references messages; it never lives in them. | The message table stays unambiguous — one kind of row, one meaning. The record cites challenge messages by id rather than copying them. |
 | D5 | Majority means **absolute majority of the eligible roster** (> half of eligible ballots for one option), not a majority of ballots cast. Unanimity means **every eligible voter** casts the same choice. The quorum threshold of requirements #5 is **derived from the rule** (majority → ⌊N/2⌋+1, unanimity → N), not stored per room. | Requirements #5 says "simple majority of room participants" — of participants, not of turnout — and its own default never exercises a threshold the rule does not already fix. Absolute-of-eligible means no option can win at low turnout by construction, which is what a quorum threshold is for. v0 offers no way to create a room with any other threshold (the shipped `rooms` table stores only the rule), so a stored threshold would be a column nothing can set; `decision_rule` being TEXT leaves the space for configurable rules in v1. This narrows the letter of requirements #5, and this PR amends that line to match — the contract and the design must not disagree. |
-| D6 | Ballots are hidden until the voting phase closes. **Who has voted is visible; what they voted is not.** Re-casting before close is allowed; the last ballot counts. | No anchoring (requirements #4) while keeping progress observable — a deadline-bound phase needs "3 of 5 have voted" to be visible to be useful. Re-casting costs nothing because nothing was revealed. |
+| D6 | Ballots are hidden until the voting phase closes. **Who has voted is visible; what they voted is not.** Re-casting before close is allowed; the last ballot counts. Revocation stops future action but does not withdraw an existing ballot; the immutable record marks when the surviving ballot's grant was revoked before close. | No anchoring (requirements #4) while keeping progress observable — a deadline-bound phase needs "3 of 5 have voted" to be visible to be useful. Re-casting costs nothing because nothing was revealed. Revocation cannot rewrite history, but the record must preserve the credential posture known at its one write moment (D9). |
 | D7 | Voting closes **at its deadline, or early once every eligible ballot is cast** — never mid-phase on partial information. | An earlier draft closed the moment the outcome was mathematically determined. Review killed it twice over: a mid-phase close forecloses the re-cast D6 promises (a transient disagreement would freeze into an immutable failure), and its timing leaks ballot state a hidden-ballot phase exists to hide. Turnout-complete close keeps decisions prompt without either defect — everyone has spoken at least once, and the close instant reveals nothing `ballot_cast` events did not already show. |
 | D8 | A deliberation that cannot converge **fails closed and says why**: the record names the rule, the tally shape, and — verbatim, quoted — the eligible voters who never cast. | Unanimity with a dead voter must produce an answer, and the answer must be actionable. Failure is an outcome, not an error. |
 | D9 | Decision records are **immutable rows written exactly once**, at close, in the same transaction as the phase change and its event. | Requirements #6 and #10: the records are the product's memory. One write, one event, no afterlife. |
@@ -55,6 +55,7 @@ CREATE TABLE ballots (
   choice          INTEGER NOT NULL,  -- index into options
   dissent         TEXT,              -- verbatim; never trimmed, never rewritten
   cast_at         INTEGER NOT NULL,
+  session_id      TEXT REFERENCES sessions(id), -- the session behind the surviving cast
   PRIMARY KEY (deliberation_id, participant_id)  -- re-cast = replace (D6)
 );
 
@@ -68,7 +69,8 @@ CREATE TABLE decisions (
                                   -- without parsing prose (Design System pass, DM screen).
   reason          TEXT NOT NULL,  -- server-authored prose: rule, tally shape, and (quoted) non-voters on failure (D8)
   record          TEXT NOT NULL,  -- JSON: question, options, rule snapshot, eligible roster,
-                                  -- ballots (choice + dissent verbatim), challenge message ids (D4)
+                                  -- ballots (choice + dissent verbatim, optional revoked-grant mark),
+                                  -- challenge message ids (D4)
   closed_at       INTEGER NOT NULL
 );
 ```

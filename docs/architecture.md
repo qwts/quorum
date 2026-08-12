@@ -97,6 +97,11 @@ records ([requirements §3](requirements.md)) that are the point of the product.
 `src/domain/schema.ts` states the current shape for a database that has none
 yet; the migrations bring an existing one to it.
 
+Claims close once by holder release, clock expiry, or identity revocation. A
+revocation cascade closes the bound participant's live claims in the same
+transaction as the revoked node and emits one `claim_revoked` fact per lease,
+so no credential that can no longer act strands an enforced scope behind it.
+
 ## 3. Deliberation Protocol State Machine
 
 The enforced phases per deliberation (requirements 1.1 #3–#6). This section

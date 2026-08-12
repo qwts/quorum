@@ -250,14 +250,22 @@ asked for a name once`.
   browser's own `prompt()` is acceptable platform chrome for the *name*)
   could stretch to three chained prompts, but a three-prompt convening flow
   is a UX decision nobody designed, and copy is normative here.
-- **What I did instead:** did not wire it. Agents convene over MCP (the
-  route and the tool are the same domain call); humans challenge, vote, and
-  read the record through the overlay. Release notes state 1.1 #9 as
-  partial on exactly this line.
-- **Blocking?** no for alpha; **yes for the acceptance walk (#21)**, which
-  traces 1.1 #9 in full.
+- **What I did instead:** the room composer's designed `propose` action now
+  opens native prompts for the question and two-to-ten options, following
+  Q12's platform-chrome precedent. It posts through the same domain route as
+  the MCP tool. No screen-owned dialog, field, or token treatment was
+  invented; replacing the platform prompts remains a design-lane decision.
+- **Blocking?** no for the acceptance walk (#21): a human can convene in the
+  served UI and the HTTP-plus-domain path is covered. **Still open** for a
+  designed multi-field flow before this is called a polished product UX.
 
-### Q15 — Roster presence lines (/status, /blocked) have no designed treatment
+### Q15 — Roster presence lines (/status, /blocked) have no designed treatment — **CLOSED 2026-08-07**
+
+> Resolved upstream in design 0.5.0. `IdentityChip` gains `note` plus
+> `noteKind: 'status' | 'blocked'`: blocked uses an uppercase neutral label and
+> `--line-strong` rail, status uses a transparent rail for identical alignment,
+> and neither gains a hue. The participant-authored note is advisory, rendered
+> verbatim as text, and independent of the server-derived `status="waiting"` dot.
 
 - **Where:** the room screen roster; #52 gives participants an advisory
   status ("what I am doing") and a blocked state ("stuck, and on what").
@@ -265,9 +273,9 @@ asked for a name once`.
   roster identity, and a visually distinct treatment for blocked — the
   design system ships `q-identity-chip` with no status affordance and no
   blocked variant.
-- **What I did instead:** a `.quiet` text line under the chip, prefixed
-  `blocked:` for the blocked kind — existing styles arranged, no new
-  visual invented.
+- **What I did instead:** before 0.5.0, a `.quiet` text line under the chip,
+  prefixed `blocked:` for the blocked kind — existing styles arranged, no new
+  visual invented. The component treatment now replaces that stopgap.
 - **Blocking?** no; the data flows and the words are on screen. A designed
   treatment (and whether blocked deserves color) is a design-lane call.
 - **Since #17:** the question is bigger than this entry describes, and its
@@ -277,4 +285,4 @@ asked for a name once`.
   `offline` + `blocked` is a legal, meaningful pair. `unknown` renders as it
   does today: nothing. Meanings and legal combinations are in
   [docs/design/presence.md](../../docs/design/presence.md); what to draw is
-  still this question.
+  now lives in the component; the two axes remain independent.

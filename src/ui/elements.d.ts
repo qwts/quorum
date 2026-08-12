@@ -32,6 +32,10 @@ export interface QIdentityChip extends HTMLElement {
   size?: 'sm' | 'md';
   /** `waiting` pulses the dot: the agent is blocked in `wait_for_events`. */
   status?: IdentityStatus;
+  /** Participant-authored advisory presence, rendered verbatim as text. Never use it for protocol decisions or absence. */
+  note?: string;
+  /** `blocked` adds a neutral label and rail; neither kind carries protocol authority or hue. */
+  noteKind?: 'status' | 'blocked';
 }
 
 /** One row of a room stream or DM thread. Attach a card by slotting it as a child. */
@@ -138,7 +142,13 @@ export interface DecisionOptionResult {
   option: string;
   count: number;
   /** Revealed only after close. */
-  voters?: string[];
+  voters?: (string | DecisionVoter)[];
+}
+
+export interface DecisionVoter {
+  name: string;
+  /** True only when the credential used for this ballot was revoked before close. */
+  grantRevokedBeforeClose?: true;
 }
 
 export interface RecordedDissent {

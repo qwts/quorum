@@ -73,6 +73,12 @@ export const api = {
    */
   post: (room, participantId, body, deliberationId) =>
     write(`/api/rooms/${encodeURIComponent(room)}/messages`, { participantId, body, deliberationId }),
+  propose: (
+    /** @type {string} */ room,
+    /** @type {string} */ participantId,
+    /** @type {string} */ question,
+    /** @type {string[]} */ options,
+  ) => write(`/api/rooms/${encodeURIComponent(room)}/deliberations`, { participantId, question, options }),
   vote: (/** @type {string} */ deliberationId, /** @type {string} */ participantId, /** @type {number} */ choice) =>
     write(`/api/deliberations/${encodeURIComponent(deliberationId)}/vote`, { participantId, choice }),
   closeChallenges: (/** @type {string} */ deliberationId, /** @type {string} */ participantId) =>

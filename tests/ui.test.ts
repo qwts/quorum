@@ -100,6 +100,27 @@ test('the phase conceals an option\'s tally and never its label', () => {
   }
 });
 
+test('identity presence notes are verbatim, neutral, advisory, and screen-owned nowhere (#67)', () => {
+  const chip = read('components', 'identity-chip.js');
+  const contract = read('elements.d.ts');
+  const views = read('kit', 'app/views.js');
+  const noteRule = /\.note \{([^}]+)\}/.exec(chip)?.[1] ?? '';
+
+  assert.match(chip, /'status', 'note', 'noteKind'/, 'both camelCase properties are observed and re-render');
+  assert.match(noteRule, /border-left: var\(--border-width-accent\) solid transparent/);
+  assert.match(noteRule, /color: var\(--text-muted\); font: var\(--type-mono\)/);
+  assert.doesNotMatch(noteRule, /--hue|--phase|--id-|text-overflow|line-clamp|max-height/, 'the note has neither hue nor truncation');
+  assert.match(chip, /\.note\.blocked \{ border-left-color: var\(--line-strong\)/);
+  assert.match(chip, /\.note-kind \{[\s\S]*var\(--text-meta\)[\s\S]*var\(--type-label\)[\s\S]*var\(--ls-caps\)/);
+  assert.match(chip, /:host\(\[status="waiting"\]\) \.dot/, 'the server-derived waiting dot keeps its own selector');
+  assert.doesNotMatch(chip, /status="waiting"[^\n]*\.note|\[note\][^\n]*\.dot/, 'the two signals do not depend on each other');
+
+  assert.match(contract, /note\?: string/);
+  assert.match(contract, /noteKind\?: 'status' \| 'blocked'/);
+  assert.equal((views.match(/'note-kind':/g) ?? []).length, 2, 'roster and occupants both pass the component contract');
+  assert.doesNotMatch(views, /blocked:/, 'screens no longer prefix or style the participant text themselves');
+});
+
 test('screen code contains no literal colour, size or duration', () => {
   // The acceptance criterion, mechanised: an agent building a screen should
   // never have had to choose a value, so a literal is evidence it did.
@@ -168,6 +189,23 @@ test('no component can render a participant message as markup', () => {
       );
     }
   }
+});
+
+test('a revoked-ballot marker cannot be mistaken for participant-authored name text (#73)', () => {
+  const card = read('components', 'decision-card.js');
+
+  assert.match(card, /h\('span', \{ class: 'voter-name' \}, name\)/, 'the participant name owns its own text node');
+  assert.match(
+    card,
+    /h\('span', \{ class: 'revocation-marker' \}, 'grant revoked before close'\)/,
+    'the server-authored marker owns a separate element',
+  );
+  assert.match(card, /\.revocation-marker \{[\s\S]*border: 1px solid currentColor/, 'the marker is visibly badge-like');
+  assert.doesNotMatch(
+    card,
+    /`\$\{voter\.name\}[^`]*grant revoked before close/,
+    'participant-authored text is never concatenated with the server-authored marker',
+  );
 });
 
 test('the UI is served from src/ui and nowhere else', async () => {

@@ -50,10 +50,11 @@ try {
   if (revoking !== undefined) {
     // Revocation cascades down the tree (design §2): the principal, every
     // grant beneath it, and any session those grants had open.
-    const { grants, sessions } = quorum.identity.revokePrincipal(revoking);
+    const { grants, sessions, claims } = quorum.identity.revokePrincipal(revoking);
     process.stdout.write(
       `revoked ${JSON.stringify(revoking)}: ${grants.length} grant(s) killed,` +
-        ` ${sessions.length} live session(s) ended. The feed carries it, so anyone watching sees it happen.\n`,
+        ` ${sessions.length} live session(s) ended, ${claims.length} claim(s) freed.` +
+        ' The feed carries it, so anyone watching sees it happen.\n',
     );
   } else {
     const hours = Number(flag('ttl-hours') ?? DEFAULT_TTL_HOURS);

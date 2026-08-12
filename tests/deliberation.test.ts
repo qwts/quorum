@@ -8,6 +8,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { actingSession } from '../src/domain/acting.ts';
 import { openQuorum, QuorumError } from '../src/domain/quorum.ts';
 
 function withClock(start = 1_700_000_000_000) {
@@ -22,6 +23,15 @@ function withClock(start = 1_700_000_000_000) {
 
 function agent(quorum: ReturnType<typeof openQuorum>, name: string) {
   return quorum.identify({ name, harness: 'test' }).participant;
+}
+
+function credentialedAgent(quorum: ReturnType<typeof openQuorum>, name: string) {
+  const participant = agent(quorum, name);
+  const { grant, principal } = quorum.identity.mint({ name: `${name}-principal` });
+  quorum.identity.bindParticipant({ participantId: participant.id, principalId: principal.id });
+  const opened = quorum.identity.establish({ grantId: grant.id, source: 'test' });
+  if (!opened.ok) assert.fail(opened.refusal);
+  return { participant, grant, sessionId: opened.session.id };
 }
 
 // A room with its members and an open deliberation, ready to argue in.
@@ -197,6 +207,10 @@ test('full turnout closes voting early; the record reveals ballots and dissent v
     'dissent preserved verbatim (1.1 #4)',
   );
   assert.equal(record.challengeMessageIds.length, 1, 'the record cites its challenges by id (D4)');
+  assert.ok(
+    record.ballots.every((ballot) => !('grantRevokedBeforeClose' in ballot)),
+    'auth-off records keep their existing wire shape',
+  );
 
   const close = quorum.readEvents({ afterSeq: 0, limit: 500 }).find((e) => e.kind === 'deliberation_converged');
   assert.equal(close?.actorId, linus!.id, 'the final voter is the actor of the close');
@@ -204,6 +218,64 @@ test('full turnout closes voting early; the record reveals ballots and dissent v
     () => quorum.vote({ participantId: ada!.id, deliberationId: deliberation.id, choice: 1 }),
     /voting has closed/,
   );
+});
+
+test('a ballot records when its surviving grant was revoked before close, without changing its weight', () => {
+  const quorum = openQuorum();
+  const ada = credentialedAgent(quorum, 'ada');
+  const grace = credentialedAgent(quorum, 'grace');
+  const room = quorum.createRoom({ name: 'revoked-ballot', by: ada.participant.id });
+  quorum.joinRoom({ room: room.id, participantId: grace.participant.id });
+  const deliberation = quorum.propose({
+    participantId: ada.participant.id,
+    room: room.id,
+    question: 'does the existing ballot stand?',
+    options: ['yes', 'no'],
+  });
+  quorum.closeChallenges({ participantId: ada.participant.id, deliberationId: deliberation.id });
+
+  actingSession(ada.sessionId, () =>
+    quorum.vote({ participantId: ada.participant.id, deliberationId: deliberation.id, choice: 0 }),
+  );
+  quorum.identity.revokeGrant(ada.grant.id);
+  actingSession(grace.sessionId, () =>
+    quorum.vote({ participantId: grace.participant.id, deliberationId: deliberation.id, choice: 0 }),
+  );
+
+  const record = quorum.getDecision({ deliberationId: deliberation.id });
+  assert.deepEqual(record.tally, [2, 0], 'the marked ballot still counts');
+  assert.ok(!JSON.stringify(record).includes(ada.sessionId), 'the record exposes the mark, not credential linkage');
+  assert.equal(
+    record.ballots.find((ballot) => ballot.participantId === ada.participant.id)?.grantRevokedBeforeClose,
+    true,
+  );
+  assert.equal(
+    'grantRevokedBeforeClose' in record.ballots.find((ballot) => ballot.participantId === grace.participant.id)!,
+    false,
+    'absence is the unmarked wire shape, never false',
+  );
+});
+
+test('a post-close revocation cannot rewrite a decision record', () => {
+  const quorum = openQuorum();
+  const ada = credentialedAgent(quorum, 'ada');
+  const room = quorum.createRoom({ name: 'immutable-ballot', by: ada.participant.id });
+  const deliberation = quorum.propose({
+    participantId: ada.participant.id,
+    room: room.id,
+    question: 'freeze the credential posture?',
+    options: ['yes', 'no'],
+  });
+  quorum.closeChallenges({ participantId: ada.participant.id, deliberationId: deliberation.id });
+  actingSession(ada.sessionId, () =>
+    quorum.vote({ participantId: ada.participant.id, deliberationId: deliberation.id, choice: 0 }),
+  );
+
+  const before = JSON.stringify(quorum.getDecision({ deliberationId: deliberation.id }));
+  quorum.identity.revokeGrant(ada.grant.id);
+  const after = JSON.stringify(quorum.getDecision({ deliberationId: deliberation.id }));
+  assert.equal(after, before);
+  assert.ok(!before.includes('grantRevokedBeforeClose'));
 });
 
 test('the challenge deadline opens voting by itself, and the wake deadline knows it', () => {

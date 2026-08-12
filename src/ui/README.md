@@ -6,7 +6,7 @@ yourself choosing a colour, a size, a radius, a duration or a phase hue, stop:
 that is the bug this library was written to remove. See
 [Where the design does not answer](#where-the-design-does-not-answer).
 
-Implements the Quorum Design System `0.4.0`
+Implements the Quorum Design System `0.5.0`
 ([`DESIGN_VERSION.md`](DESIGN_VERSION.md), handed off on
 [#13](https://github.com/qwts/quorum/issues/13)).
 

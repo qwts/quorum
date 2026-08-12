@@ -10,6 +10,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
+import { currentSession } from './acting.ts';
 import { QuorumError } from './errors.ts';
 import type { DecisionRule, Participant, Room } from './quorum.ts';
 
@@ -51,7 +52,7 @@ export type DecisionRecord = DecisionSummary & {
   options: string[];
   rule: DecisionRule;
   eligible: { id: string; name: string }[];
-  ballots: { participantId: string; name: string; choice: number; dissent: string | null }[];
+  ballots: { participantId: string; name: string; choice: number; dissent: string | null; grantRevokedBeforeClose?: true }[];
   tally: number[];
   challengeMessageIds: number[];
 };
@@ -72,6 +73,7 @@ export type Deps = {
   /** An id this server stored — a deliberation's own room — resolved unscoped. */
   roomById: (id: string) => Room;
   isMember: (roomId: string, participantId: string) => boolean;
+  grantRevokedAt: (sessionId: string) => number | null;
   /** SQL predicate for rooms visible to a caller. */
   VISIBLE_ROOMS: string;
 };
@@ -111,6 +113,7 @@ type BallotRow = {
   choice: number;
   dissent: string | null;
   cast_at: number;
+  session_id: string | null;
 };
 
 export function openDeliberations(deps: Deps) {
@@ -243,6 +246,9 @@ export function openDeliberations(deps: Deps) {
         name: participantName(ballot.participant_id),
         choice: ballot.choice,
         dissent: ballot.dissent,
+        ...(ballot.session_id !== null && deps.grantRevokedAt(ballot.session_id) !== null
+          ? { grantRevokedBeforeClose: true as const }
+          : {}),
       })),
       tally,
       challengeMessageIds: (
@@ -461,11 +467,12 @@ export function openDeliberations(deps: Deps) {
         throw new QuorumError(`choice must be an option index between 0 and ${options.length - 1}`);
       }
       db.prepare(
-        `INSERT INTO ballots (deliberation_id, participant_id, choice, dissent, cast_at)
-         VALUES (?, ?, ?, ?, ?)
+        `INSERT INTO ballots (deliberation_id, participant_id, choice, dissent, cast_at, session_id)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (deliberation_id, participant_id)
-         DO UPDATE SET choice = excluded.choice, dissent = excluded.dissent, cast_at = excluded.cast_at`,
-      ).run(row.id, voter.id, input.choice, input.dissent ?? null, now());
+         DO UPDATE SET choice = excluded.choice, dissent = excluded.dissent,
+                       cast_at = excluded.cast_at, session_id = excluded.session_id`,
+      ).run(row.id, voter.id, input.choice, input.dissent ?? null, now(), currentSession());
 
       const cast = ballotsFor(row.id).length;
       appendEvent(

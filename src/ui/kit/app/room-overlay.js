@@ -8,6 +8,7 @@ import { clock } from './format.js';
 import { ensureIdentified, forget, isStaleIdentity } from './me.js';
 import { createSender } from './posting.js';
 import { overlayView } from './overlay.js';
+import { createBallotPanel } from './overlay-ballot.js';
 import { countdown } from './overlay-model.js';
 import { isTerminal } from '../../lib/phase.js';
 
@@ -26,17 +27,13 @@ export function createOverlayController({ doc, win, now, region, getState, getMe
   /** The deliberation the overlay shows, or null — in the URL, so a link to a
    *  deliberation is a link. @type {string|null} */
   let overlayId = new URLSearchParams(win.location.search).get('deliberation');
-  /** Option picked but not yet cast, per deliberation. @type {Map<string, string>} */
-  const picks = new Map();
-  /** Option this browser cast, per deliberation. Its own knowledge only —
-   *  nothing on the feed could tell it, and that is D6 working. @type {Map<string, string>} */
-  const casts = new Map();
   /** Fetched decision records by deliberation id. Immutable, so never refetched. @type {Map<string, any>} */
   const records = new Map();
   /** Record fetches in flight, so a re-render does not start a second one. @type {Set<string>} */
   const fetching = new Set();
   /** A refusal meant for this person alone. @type {string|null} */
   let notice = null;
+  const ballots = createBallotPanel({ doc, getState, getMe });
 
   const identify = () => ensureIdentified({ ask: (message) => win.prompt(message), identify: api.identify });
 
@@ -86,8 +83,18 @@ export function createOverlayController({ doc, win, now, region, getState, getMe
     castBy: (record.ballots ?? []).map((/** @type {any} */ ballot) => ballot.participantId),
   });
 
-  /** Repaint the overlay region from the model, or clear it. */
-  const render = () => {
+  /**
+   * Repaint the overlay region from the model, or clear it. A ballot echo is
+   * narrower: it can change only the stable ballot panel, never the choice.
+   * @param {any} [event]
+   */
+  const render = (event) => {
+    if (event?.kind === 'ballot_cast') {
+      const id = event.payload?.deliberationId;
+      ballots.echo(event, id);
+      if (id === overlayId) repaintBallot(id);
+      return;
+    }
     if (!region) return;
     const id = overlayId;
     let deliberation = id ? getState().deliberations.get(id) : null;
@@ -121,6 +128,9 @@ export function createOverlayController({ doc, win, now, region, getState, getMe
     }
     const state = getState();
     const inRoom = [...state.rooms.values()].find((candidate) => candidate.id === deliberation.roomId) ?? null;
+    const selection = ballots.selection(deliberation.id);
+    const actions = ballotActions(deliberation);
+    if (!isTerminal(deliberation.phase)) ballots.render(deliberation, inRoom, notice, actions);
     // The challenge composer is the one node that must survive this repaint —
     // it is passed through as itself, so its draft does. Focus does not
     // survive a DOM move, so it is restored when the field held it.
@@ -132,26 +142,45 @@ export function createOverlayController({ doc, win, now, region, getState, getMe
         inRoom,
         {
           now: now(),
-          pick: picks.get(deliberation.id) ?? null,
-          cast: casts.get(deliberation.id) ?? null,
+          pick: selection.pick,
+          cast: selection.cast,
           record: records.get(deliberation.id) ?? null,
           notice,
           me: getMe(),
           composer: challengeComposer,
+          ballot: ballots.region,
         },
-        {
-          close,
-          pick: (option) => {
-            picks.set(deliberation.id, option);
-            render();
-          },
-          cast: () => void castBallot(deliberation),
-          closeChallenges: () => void closeChallenges(deliberation),
-        },
+        actions,
       ),
     );
     if (composerHadFocus) challengeComposer.shadowRoot?.querySelector('textarea')?.focus();
   };
+
+  /** @param {any} deliberation */
+  function ballotActions(deliberation) {
+    return {
+      close,
+      pick: (/** @type {string} */ option) => {
+        ballots.pick(deliberation.id, option);
+        repaintBallot(deliberation.id);
+      },
+      cast: () => void castBallot(deliberation),
+      closeChallenges: () => void closeChallenges(deliberation),
+    };
+  }
+
+  /** Repaint only the live ballot panel, preserving the overlay shell. @param {string} id */
+  function repaintBallot(id) {
+    if (id !== overlayId) return;
+    const state = getState();
+    const deliberation = state.deliberations.get(id);
+    if (!deliberation || isTerminal(deliberation.phase)) {
+      render();
+      return;
+    }
+    const room = [...state.rooms.values()].find((candidate) => candidate.id === deliberation.roomId) ?? null;
+    ballots.render(deliberation, room, notice, ballotActions(deliberation));
+  }
 
   /**
    * Cast (or re-cast) this browser's ballot. Same rules as the stream's chips:
@@ -161,8 +190,8 @@ export function createOverlayController({ doc, win, now, region, getState, getMe
    */
   async function castBallot(deliberation) {
     notice = null;
-    const option = picks.get(deliberation.id);
-    if (option === undefined) return;
+    const option = ballots.selection(deliberation.id).pick;
+    if (option === null) return;
     const choice = (deliberation.options ?? []).indexOf(option);
     if (choice < 0) return;
     try {
@@ -172,12 +201,12 @@ export function createOverlayController({ doc, win, now, region, getState, getMe
         notice = 'Voting needs a name — a ballot with nobody behind it is not a ballot.';
       } else {
         await api.vote(deliberation.id, me.id, choice);
-        casts.set(deliberation.id, option);
+        ballots.acknowledged(deliberation.id, option);
       }
     } catch (error) {
       notice = error instanceof Error ? error.message : String(error);
     }
-    render();
+    repaintBallot(deliberation.id);
   }
 
   /**

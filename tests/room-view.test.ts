@@ -83,14 +83,14 @@ test('folding never mutates what the caller was holding', () => {
   assert.equal(after.rooms.get('r1')!.members, 3);
 });
 
-test('a released or expired claim leaves the roster', () => {
+test('a released, expired, or revoked claim leaves the roster', () => {
   const claim = { id: 'c1', participantId: 'p1', repo: 'quorum', patterns: ['src/**'], purpose: 'x', expiresAt: 5_000 };
   const held = apply(painted(), event(11, 'claim_granted', { claim }));
   assert.equal(liveClaims(held, 0).length, 1);
 
   assert.equal(liveClaims(apply(held, event(12, 'claim_released', { claim })), 0).length, 0);
   assert.equal(liveClaims(apply(held, event(12, 'claim_expired', { claim })), 0).length, 0);
-
+  assert.equal(liveClaims(apply(held, event(12, 'claim_revoked', { claim })), 0).length, 0);
   // Expiry is a clock fact, not only an event: a lease whose time has passed
   // is gone whether or not the sweep has run yet.
   assert.equal(liveClaims(held, 6_000).length, 0);
@@ -433,7 +433,7 @@ const RECORD = {
   closedAt: 0, rule: 'majority', options: ['Add it now', 'Defer to v1'], tally: [2, 1],
   eligible: [{ id: 'p1', name: 'codex:api' }, { id: 'p2', name: 'Dana' }, { id: 'p3', name: 'devin:tests' }, { id: 'p4', name: 'cursor:web-ui' }],
   ballots: [
-    { participantId: 'p1', name: 'codex:api', choice: 0, dissent: null },
+    { participantId: 'p1', name: 'codex:api', choice: 0, dissent: null, grantRevokedBeforeClose: true },
     { participantId: 'p2', name: 'Dana', choice: 0, dissent: null },
     { participantId: 'p3', name: 'devin:tests', choice: 1, dissent: 'The field defaults on, which ships the risk the challenge was about.' },
   ],
@@ -451,7 +451,7 @@ test('a record names who never cast, not just how many did', () => {
   // Every option appears, including ones nobody chose — a tally listing only
   // winners is an advert rather than a record.
   assert.deepEqual(props.options.map((o: any) => [o.option, o.count]), [['Add it now', 2], ['Defer to v1', 1]]);
-  assert.deepEqual(props.options[0]?.voters, ['codex:api', 'Dana']);
+  assert.deepEqual(props.options[0]?.voters, [{ name: 'codex:api', grantRevokedBeforeClose: true }, { name: 'Dana' }], 'the record projection preserves revoked-before-close context for the decision card');
 
   assert.deepEqual(props.dissents, [{ name: 'devin:tests', note: RECORD.ballots[2]?.dissent }]);
 
