@@ -447,6 +447,30 @@ test('an unidentified observer consumes without owning a cursor', async () => {
   quorum.close();
 });
 
+test('after_seq past the feed head is a hard error and does not advance the cursor', async () => {
+  const quorum = openQuorum();
+  const ada = quorum.identify({ name: 'ada', harness: 'test' });
+  const grace = agent(quorum, 'grace');
+  quorum.createRoom({ name: 'platform', by: ada.participant.id });
+  const before = quorum.cursorFor(ada.participant.id).cursor;
+  const head = quorum.latestSeq();
+  await assert.rejects(
+    () => quorum.waitForEvents({ afterSeq: head + 1, timeoutMs: 0, participantId: ada.participant.id }),
+    (error: unknown) =>
+      error instanceof QuorumError && /past the feed head/.test(error.message) && /identify/.test(error.message),
+  );
+  assert.equal(quorum.cursorFor(ada.participant.id).cursor, before, 'a refused ack must not mark unseen seqs delivered');
+  assert.deepEqual(await quorum.waitForEvents({ afterSeq: head, timeoutMs: 0, participantId: ada.participant.id }), []);
+  assert.equal(quorum.cursorFor(ada.participant.id).cursor, head);
+  assert.ok((await quorum.waitForEvents({ afterSeq: 0, timeoutMs: 0, participantId: grace.id })).length > 0);
+  await assert.rejects(
+    () => quorum.waitForEvents({ afterSeq: 999_999, timeoutMs: 0, participantId: null }),
+    /past the feed head/,
+  );
+  assert.equal(quorum.cursorFor(ada.participant.id).cursor, head, "a refused anonymous wait moves nobody else's cursor");
+  quorum.close();
+});
+
 test('a database made before a column existed still opens', () => {
   // The upgrade path someone actually hits: they ran quorum, we shipped a new
   // column, they pulled and restarted. CREATE TABLE IF NOT EXISTS will not add
