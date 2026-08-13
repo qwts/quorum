@@ -113,12 +113,17 @@ const READ_MESSAGES: ToolDefinition = {
 const WAIT_FOR_EVENTS: ToolDefinition = {
   name: 'wait_for_events',
   description:
-    'Block until something happens after your cursor — a message, a claim granted, released, or expired. Returns an empty list on timeout; pass the highest seq you saw as after_seq next time. Do not poll in a loop without this call. ' +
+    'Block until something happens after your cursor — a message, a claim granted, released, or expired. Returns an empty list on timeout; pass the highest seq you saw as after_seq next time. after_seq past the feed head is an error, not a catch-up — call identify to recover your cursor. Do not poll in a loop without this call. ' +
     'A delivered message may carry guidance from this server below a --- rule; the reply says which ones do.',
   inputSchema: {
     type: 'object',
     properties: {
-      after_seq: { type: 'integer', minimum: 0, description: 'Highest event seq you have already handled.' },
+      after_seq: {
+        type: 'integer',
+        minimum: 0,
+        description:
+          'Highest event seq you have already handled. Must not exceed the current feed head — a value past it is an error, not a skip.',
+      },
       timeout_ms: { type: 'integer', minimum: 0, maximum: 120000 },
     },
     required: ['after_seq'],

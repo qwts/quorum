@@ -379,7 +379,8 @@ export function openQuorum(options: QuorumOptions = {}) {
   // is that a crash mid-batch replays it, and replay is the side to err on.
   //
   // Monotonic, so a stale or replayed call cannot drag a participant backwards
-  // into re-reading what it has already acknowledged.
+  // into re-reading what it has already acknowledged. waitForEvents refuses a
+  // cursor past latestSeq() first, or a hallucinated seq would skip forever.
   function acknowledgeCursor(participantId: string | null, upTo: number): void {
     if (participantId === null) return; // an unidentified observer owns no cursor
     db.prepare('UPDATE participants SET cursor = ? WHERE id = ? AND cursor < ?').run(upTo, participantId, upTo);
@@ -812,6 +813,14 @@ export function openQuorum(options: QuorumOptions = {}) {
       const timeoutMs = Math.min(Math.max(input.timeoutMs ?? 25_000, 0), 120_000);
       const deadline = Date.now() + timeoutMs;
       const viewer = input.participantId ?? input.viewerId ?? null;
+      const head = latestSeq();
+      if (input.afterSeq > head) {
+        const known = input.participantId == null ? null : storedCursor(input.participantId);
+        throw new QuorumError(
+          `after_seq ${JSON.stringify(input.afterSeq)} is past the feed head (seq ${head}). ` +
+            `${known === null ? 'Call identify to recover your last acknowledged cursor, then wait_for_events from that after_seq' : `Your last acknowledged cursor is ${known} — call wait_for_events with after_seq=${known}, or identify to recover it`}. Do not skip ahead.`,
+        );
+      }
       // Coming back for events after N is the acknowledgement that everything
       // through N arrived.
       acknowledgeCursor(input.participantId ?? null, input.afterSeq);

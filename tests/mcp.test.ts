@@ -155,24 +155,24 @@ test('reconnecting with the same name resumes the identity and its claims', asyn
   assert.equal(released.isError, undefined, 'and can release it, rather than waiting out the TTL');
 });
 
-// The loop is bound by the replies, not by a skill file an agent may not
-// have read: every answer names the call that comes next.
+// The loop is bound by the replies: every answer names the call that comes next.
 test('every reply hands back the next move', async () => {
   const agent = await connect();
   const guidance = async (name: string, args: Record<string, unknown> = {}) =>
     String((await call(agent, name, args)).structuredContent?.guidance ?? '');
-
-  assert.match(await guidance('identify', { name: 'loop:probe', harness: 'test' }), /claim_scope/);
-  assert.match(await guidance('identify', { name: 'loop:probe', harness: 'test' }), /wait_for_events with after_seq=\d+/);
+  const identified = await call(agent, 'identify', { name: 'loop:probe', harness: 'test' });
+  assert.match(String(identified.structuredContent?.guidance), /claim_scope/);
+  assert.match(String(identified.structuredContent?.guidance), /wait_for_events with after_seq=\d+/);
   assert.match(await guidance('create_room', { name: 'loop-probe' }), /post_message/);
   assert.match(await guidance('list_claims', { repo: 'nothing-here' }), /claim_scope/);
-  assert.match(
-    await guidance('claim_scope', { repo: 'loop-demo', patterns: ['src/**'], purpose: 'probing' }),
-    /release_claim/,
-  );
-  assert.match(await guidance('wait_for_events', { after_seq: 999_999, timeout_ms: 0 }), /wait_for_events again/);
-
-  // A failure points back into the loop too, instead of leaving the agent to invent a way out.
+  assert.match(await guidance('claim_scope', { repo: 'loop-demo', patterns: ['src/**'], purpose: 'probing' }), /release_claim/);
+  assert.match(await guidance('wait_for_events', { after_seq: 0, timeout_ms: 0 }), /wait_for_events again/);
+  const past = await call(agent, 'wait_for_events', { after_seq: 999_999, timeout_ms: 0 });
+  assert.equal(past.isError, true, 'a seq past the head is an error, not an empty success');
+  assert.match(String(past.structuredContent?.error), /past the feed head/);
+  const back = await call(agent, 'identify', { name: 'loop:probe', harness: 'test' });
+  assert.equal(back.structuredContent?.cursor, identified.structuredContent?.cursor);
+  assert.ok((back.structuredContent?.unseen as number) >= 1, 'clamping to the head would have marked later events seen');
   const failed = await call(agent, 'join_room', { room: 'no-such-room' });
   assert.equal(failed.isError, true);
   assert.match(JSON.stringify(failed.content), /post_message rather than working around it/);
