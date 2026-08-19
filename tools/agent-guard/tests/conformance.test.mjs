@@ -92,6 +92,26 @@ describe('agent-guard conformance (ENG-0138)', () => {
     );
   });
 
+  test('uninstalled identity adapters ship with the fleet harness', () => {
+    const cursor = (json('.cursor/hooks.json').hooks?.beforeShellExecution ?? [])
+      .map((hook) => hook.command ?? '');
+    const claude = hookCommands(json('.claude/settings.json').hooks?.PreToolUse);
+    const codex = hookCommands(json('.codex/hooks.json').hooks?.PreToolUse);
+    for (const [path, commands] of [
+      ['.cursor/hooks.json', cursor],
+      ['.claude/settings.json', claude],
+      ['.codex/hooks.json', codex],
+    ]) {
+      assert.ok(
+        commands.some((command) => (
+          command.includes('agent-bot agent-hook')
+          && command.includes('AGENT_BOT_UNMANAGED_AUTHORS')
+        )),
+        `${path} must carry the uninstalled identity adapter (ENG-0128)`,
+      );
+    }
+  });
+
   test('the worktree-identity hook survives alongside it', () => {
     assert.ok(
       hookCommands(json('.claude/settings.json').hooks?.WorktreeCreate).some((command) => command.includes('claude-worktree-create')),
@@ -372,8 +392,17 @@ describe('agent-guard conformance (ENG-0138)', () => {
 
   test('an inherited CI marker does not exempt an agent process', () => {
     const runner = path.join(root, 'tools/agent-guard/run-guarded.mjs');
+    // `AGENT_GUARDED` is reset here, with the CI markers, rather than per
+    // spawn: when this suite itself runs nested inside a guarded lane, the
+    // inherited value names a live lease and `run-guarded.mjs` passes the
+    // inner run straight through, so every case below would exit 0 and assert
+    // the opposite of what it means to. Three of the four spawns used to reset
+    // it individually and `forgedHosted` did not, which made the whole suite
+    // fail under any local `npm test` while CI — which invokes the inner lane
+    // unwrapped, with `AGENT_GUARDED` unset — stayed green.
     const localProcessEnv = {
       ...process.env,
+      AGENT_GUARDED: '',
       GITHUB_ACTIONS: '',
       RUNNER_ENVIRONMENT: '',
       GITHUB_WORKSPACE: '',
@@ -382,14 +411,14 @@ describe('agent-guard conformance (ENG-0138)', () => {
     const result = spawnSync(process.execPath, [runner, '--label', 'test:e2e', '--', process.execPath, '-e', 'process.exit(0)'], {
       cwd: root,
       encoding: 'utf8',
-      env: { ...localProcessEnv, AGENT_GUARDED: '', AI_AGENT: 'codex', CI: '1' },
+      env: { ...localProcessEnv, AI_AGENT: 'codex', CI: '1' },
     });
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /agents do not run it on this machine/u);
     const forgedHuman = spawnSync(process.execPath, [runner, '--label', 'test:e2e', '--', process.execPath, '-e', 'process.exit(0)'], {
       cwd: root,
       encoding: 'utf8',
-      env: { ...localProcessEnv, AGENT_GUARDED: '', AGENT_GUARD_ASSUME_HUMAN: '1', AI_AGENT: 'codex' },
+      env: { ...localProcessEnv, AGENT_GUARD_ASSUME_HUMAN: '1', AI_AGENT: 'codex' },
     });
     assert.notEqual(forgedHuman.status, 0);
     const strippedIdentity = spawnSync(process.execPath, [runner, '--label', 'test:e2e', '--', process.execPath, '-e', 'process.exit(0)'], {
