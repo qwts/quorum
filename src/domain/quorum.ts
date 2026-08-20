@@ -347,14 +347,14 @@ export function openQuorum(options: QuorumOptions = {}) {
     const row = db.prepare('SELECT MAX(seq) AS seq FROM events').get() as { seq: number | null } | undefined;
     return row?.seq ?? 0;
   }
-
   function storedCursor(participantId: string): number {
     const row = db.prepare('SELECT cursor FROM participants WHERE id = ?').get(participantId) as
-      | { cursor: number }
-      | undefined;
-    return row?.cursor ?? 0;
+      { cursor: number } | undefined;
+    const cursor = row?.cursor ?? 0;
+    if (cursor <= latestSeq()) return cursor;
+    db.prepare('UPDATE participants SET cursor = 0 WHERE id = ?').run(participantId);
+    return 0;
   }
-
   // Counted through the same audience filter as the reads, or the count would
   // promise events the read then refuses to deliver — an agent told "3
   // waiting" must find exactly 3.

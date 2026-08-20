@@ -38,9 +38,14 @@ async function get(path: string): Promise<{ status: number; body: any }> {
  * Read SSE frames until `want` of them have a real event name, or the deadline
  * passes. Returns the parsed frames so a test can assert on seq and payload.
  */
-async function stream(path: string, want: number, act?: () => void): Promise<{ event: string; id: string; data: any }[]> {
+async function stream(
+  path: string,
+  want: number,
+  act?: () => void,
+  headers?: Record<string, string>,
+): Promise<{ event: string; id: string; data: any }[]> {
   const controller = new AbortController();
-  const response = await fetch(`${origin}${path}`, { signal: controller.signal });
+  const response = await fetch(`${origin}${path}`, { headers, signal: controller.signal });
   assert.equal(response.headers.get('content-type'), 'text/event-stream; charset=utf-8');
 
   const reader = response.body!.getReader();
@@ -191,6 +196,16 @@ test('reconnecting with Last-Event-ID resumes after exactly that event', async (
   assert.match(text, new RegExp(`"after":${mark + 1}`));
   assert.ok(!text.includes('"body":"first"'), 'the acknowledged event is not replayed');
   assert.equal(typeof second.id, 'number');
+});
+
+test('a stale anonymous Last-Event-ID resets to replay-safe history', async () => {
+  const stale = quorum.latestSeq() + 10_000;
+  const frames = await stream('/api/events', 2, undefined, { 'last-event-id': String(stale) });
+
+  assert.equal(frames[0]!.event, 'cursor');
+  assert.equal(frames[0]!.data.after, 0, 'the transport publishes the repaired cursor to EventSource');
+  assert.notEqual(frames[1]!.event, 'stream_error');
+  assert.equal(typeof frames[1]!.data.kind, 'string', 'the restored feed is replayed instead of reconnect-looping');
 });
 
 test('watching a room advances nobody else\'s cursor', async () => {
