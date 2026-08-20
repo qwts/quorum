@@ -143,6 +143,13 @@ export function serveEvents(req: IncomingMessage, res: ServerResponse, url: URL,
   });
 
   let cursor = Math.max(0, Math.trunc(start));
+  if (cursor > quorum.latestSeq()) {
+    // EventSource retains Last-Event-ID across reconnects. After a feed
+    // restore that id may be unreachable, so an anonymous browser stream must
+    // publish and use a valid replay cursor instead of emitting stream_error
+    // and reconnecting forever with the same stale id.
+    cursor = 0;
+  }
   let open = true;
   const stop = () => {
     open = false;
