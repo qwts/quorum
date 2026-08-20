@@ -25,7 +25,7 @@ test('drafts skip all jobs and ready updates cancel by PR', () => {
 test('actor and fork enforcement is loaded from a trusted immutable commit', () => {
   assert.match(
     ci,
-    /uses: qwts\/playbook-engineering\/\.github\/actions\/ci-policy@4e70c773155c2c804e52a487352627010bea1897/,
+    /uses: qwts\/playbook-engineering\/\.github\/actions\/ci-policy@5455a3f5939369ea843b1bbb4d2573739f4381a6/,
   );
   assert.doesNotMatch(ci, /uses: \.\/\.github\/actions\/ci-policy/);
   assert.match(ci, /permissions:\n  actions: read\n  contents: read/);
@@ -35,8 +35,9 @@ test('actor and fork enforcement is loaded from a trusted immutable commit', () 
 
 test('the stable CI context is the aggregate lifecycle verdict', () => {
   assert.match(ci, /^  gate:\n    name: CI$/m);
-  assert.match(ci, /needs: \[policy, merge-evidence, preflight-evidence, test, codeql, post-merge\]/);
+  assert.match(ci, /needs: \[policy, merge-evidence, preflight-evidence, test, codeql, post-merge, workflow-runtime\]/);
   assert.match(ci, /test "\$POLICY" = success/);
+  assert.match(ci, /test "\$WORKFLOW_RUNTIME" = success/);
   assert.match(ci, /case "\$MODE" in/);
 });
 
@@ -45,7 +46,7 @@ test('exact-SHA evidence selects the complete or post-merge lane', () => {
   assert.match(ci, /actions\/runs\?head_sha=\$GITHUB_SHA/);
   assert.match(ci, /\.path == "\.github\/workflows\/ci\.yml"/);
   assert.match(ci, /\.event == "pull_request" and \.conclusion == "success"/);
-  assert.match(ci, /\.name == "CI" and \.conclusion == "success"/);
+  assert.doesNotMatch(ci, /\.workflow_runs\[\].*\.name == "CI"/);
   assert.match(ci, /needs\.preflight-evidence\.outputs\.validated != 'true'/);
   assert.match(ci, /needs\.merge-evidence\.outputs\.validated != 'true'/);
 });
@@ -53,7 +54,7 @@ test('exact-SHA evidence selects the complete or post-merge lane', () => {
 test('the existing complete suite remains intact behind the stable CI gate', () => {
   assert.match(ci, /^  test:$/m);
   assert.match(ci, /node-version: 24/);
-  assert.match(ci, /run: npm ci/);
+  assert.match(ci, /arguments-json: '\["ci"\]'/);
   assert.match(ci, /run: npm run typecheck/);
   assert.match(ci, /run: npm test/);
   assert.match(ci, /^  gate:\n    name: CI$/m);
