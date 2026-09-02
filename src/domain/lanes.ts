@@ -30,6 +30,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 
 import { QuorumError } from './errors.ts';
+import { mentions } from './mention.ts';
 import type { QuorumEvent } from './quorum.ts';
 
 export const LANES = ['all', 'directed'] as const;
@@ -81,17 +82,6 @@ const PAGE = 100;
 
 /** Ambient events one directed read may walk before handing control back. */
 export const MAX_SCAN = 1_000;
-
-// A mention is `@` followed by the whole name, standing alone: not a
-// fragment of a longer token on either side (`email@ada`, `@ada2`). The name
-// class mirrors what names on this server look like — `claude:auth-refactor`
-// — so a mention can carry a colon or a dot without ending early.
-const NAME_CHAR = '[\\p{L}\\p{N}_:./-]';
-
-export function mentions(body: string, name: string): boolean {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(?<!${NAME_CHAR})@${escaped}(?!${NAME_CHAR})`, 'u').test(body);
-}
 
 // The filter every read applies (src/domain/quorum.ts readEventsAfter), so a
 // count here never exceeds what a read would deliver. Binds viewer twice.

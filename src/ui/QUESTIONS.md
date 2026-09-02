@@ -286,3 +286,23 @@ asked for a name once`.
   does today: nothing. Meanings and legal combinations are in
   [docs/design/presence.md](../../docs/design/presence.md); what to draw is
   now lives in the component; the two axes remain independent.
+
+### Q16 — A forked room message in the DM thread has no designed treatment (#84)
+
+- **Where:** `src/ui/kit/app/dm-model.js` (the fold composes the row),
+  `src/ui/kit/app/dm-views.js` (the conversation renders it).
+- **What I needed:** how a room message that an `@mention` surfaced in a DM
+  thread looks there: inline with an origin marker, or as a quoted reference
+  above the private reply; whether the marker links to the room and what it
+  says; and — the reverse — whether the *room* message shows that it was also
+  delivered privately.
+- **Why the system does not answer it:** `q-message-row` has no state for a
+  message that originated elsewhere, and the library may not invent one. The
+  reverse view is a privacy property wearing a visual decision: the mention
+  text is public, but advertising the private context in the room is a
+  choice the desk should make explicitly. The implementation's read is *no*.
+- **What I did instead:** the row carries `origin` (message id, room id and
+  name) and renders as an ordinary message row, unstyled and unmarked. The
+  server's guidance carries the origin for agents; humans wait on the desk.
+- **Blocking?** no.
+

@@ -19,7 +19,7 @@
 
 import { buildRegistry, type CommandOutcome, type Deps } from './command-set.ts';
 import { QuorumError } from './errors.ts';
-import type { Message } from './quorum.ts';
+import type { Message, PostedMessage } from './quorum.ts';
 
 export type { CommandOutcome } from './command-set.ts';
 
@@ -64,7 +64,7 @@ export function openCommands(deps: Deps) {
      * no trace, an order that ran is on the record.
      */
     async post(input: { room: string; participantId: string; body: string; deliberationId?: string }): Promise<{
-      message?: Message;
+      message?: PostedMessage;
       command?: CommandOutcome;
     }> {
       // A challenge is an argument, not an order: a deliberation-tagged body

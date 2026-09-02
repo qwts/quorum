@@ -24,6 +24,7 @@ export function emptyDm() {
  * @returns {DmModel}
  */
 export function applyDm(model, event, meId, counterpartId) {
+  if (event.kind === 'message') return applyForks(model, event, meId, counterpartId);
   if (event.kind !== 'dm_message') return model;
   const { message, thread } = event.payload;
 
@@ -42,4 +43,40 @@ export function applyDm(model, event, meId, counterpartId) {
   const messages = inThread && !seen ? [...model.messages, message] : model.messages;
 
   return { threads, messages };
+}
+
+/**
+ * A room message that @mentioned someone (#84) is also a delivery context in
+ * the DM thread between author and mentioned — one record, so the fold
+ * composes the thread's view of it from the room event rather than waiting
+ * for a second event that never comes (unseen counts stay single).
+ *
+ * @param {DmModel} model
+ * @param {any} event
+ * @param {string} meId
+ * @param {string|null} counterpartId
+ * @returns {DmModel}
+ */
+function applyForks(model, event, meId, counterpartId) {
+  const { message, forks } = event.payload;
+  if (!Array.isArray(forks) || !message) return model;
+  let next = model;
+  for (const fork of forks) {
+    const other = message.participantId === meId ? fork.participantId : fork.participantId === meId ? message.participantId : null;
+    if (other === null) continue; // a fork between two other people is not this reader's
+    const entry = {
+      id: fork.dmId,
+      threadId: fork.threadId,
+      participantId: message.participantId,
+      body: message.body,
+      createdAt: message.createdAt,
+      origin: { messageId: message.id, roomId: message.roomId, roomName: fork.roomName ?? null },
+    };
+    const others = next.threads.filter((thread) => thread.id !== fork.threadId);
+    const threads = [{ id: fork.threadId, counterpartId: other, lastMessage: entry, createdAt: message.createdAt }, ...others];
+    const inThread = counterpartId !== null && other === counterpartId;
+    const seen = inThread && next.messages.some((existing) => existing.id === entry.id);
+    next = { threads, messages: inThread && !seen ? [...next.messages, entry] : next.messages };
+  }
+  return next;
 }

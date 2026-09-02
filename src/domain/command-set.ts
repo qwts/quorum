@@ -9,7 +9,7 @@
 import { createRequire } from 'node:module';
 import type { DatabaseSync } from 'node:sqlite';
 import { QuorumError } from './errors.ts';
-import type { Message, Participant, Room } from './quorum.ts';
+import type { Message, Participant, PostedMessage, Room } from './quorum.ts';
 
 const VERSION: string = createRequire(import.meta.url)('../../package.json').version;
 const RELEASES = 'https://api.github.com/repos/qwts/quorum/releases/latest';
@@ -41,7 +41,7 @@ export type Deps = {
   createRoom: (input: { name: string; topic?: string; by: string }) => Room;
   listRooms: (viewerId: string) => (Room & { members: number })[];
   listMembers: (input: { room: string; viewerId?: string | null }) => Participant[];
-  postMessage: (input: { room: string; participantId: string; body: string; deliberationId?: string }) => Message;
+  postMessage: (input: { room: string; participantId: string; body: string; deliberationId?: string }) => PostedMessage;
   // Lifecycle verbs (#80) reach back through the api like createRoom does,
   // so a command and its tool twin are one implementation.
   leaveRoom: (input: { room: string; participantId: string }) => Room;

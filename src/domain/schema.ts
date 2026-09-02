@@ -167,7 +167,11 @@ CREATE TABLE IF NOT EXISTS dm_messages (
   thread_id      TEXT NOT NULL REFERENCES dm_threads(id),
   participant_id TEXT NOT NULL REFERENCES participants(id),
   body           TEXT NOT NULL,
-  created_at     INTEGER NOT NULL
+  created_at     INTEGER NOT NULL,
+  -- Set when this row is a delivery context for a room message (#84): an
+  -- @mention forked it into this thread. The room row is the one message;
+  -- this row's body is empty and every read goes through the reference.
+  message_id     INTEGER REFERENCES messages(id)
 );
 CREATE INDEX IF NOT EXISTS dm_messages_by_thread ON dm_messages (thread_id, id);
 

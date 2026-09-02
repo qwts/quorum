@@ -13,7 +13,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { openQuorum, QuorumError } from '../src/domain/quorum.ts';
-import { MAX_SCAN, mentions } from '../src/domain/lanes.ts';
+import { MAX_SCAN } from '../src/domain/lanes.ts';
+import { mentions } from '../src/domain/mention.ts';
 
 function withClock(start = 1_700_000_000_000) {
   let current = start;

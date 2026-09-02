@@ -20,6 +20,7 @@ import { openPresence, UNOBSERVED, type Presence } from './presence.ts';
 import { currentSession } from './acting.ts';
 import { QuorumError } from './errors.ts';
 import { openLanes, type Lane } from './lanes.ts';
+import { openMentions, type MentionFork } from './mention.ts';
 
 export { QuorumError };
 export type { Deadline, Lane, Triage } from './lanes.ts';
@@ -70,6 +71,9 @@ export type Message = {
   deliberationId: string | null;
   createdAt: number;
 };
+
+/** A message as posted: the record, plus the DM threads a mention forked it into (#84). */
+export type PostedMessage = Message & { forks: MentionFork[] };
 
 export type Claim = {
   id: string;
@@ -429,6 +433,7 @@ export function openQuorum(options: QuorumOptions = {}) {
   // Direct messages compose the same way; their events are audience-scoped
   // through the appendEvent they are handed (docs/deliberation.md §8 seams).
   const dms = openDms({ db, now, appendEvent, requireParticipant });
+  const mentionForks = openMentions({ db, membersOf: (roomId) => memberIdsOf(roomId).map(requireParticipant), threadFor: dms.threadFor });
   const lifecycle = openLifecycle({ db, now, appendEvent, requireParticipant, requireRoom, isMember });
 
   // Presence reads those same session rows and writes nothing (#17). It is
@@ -609,7 +614,7 @@ export function openQuorum(options: QuorumOptions = {}) {
       return room;
     },
 
-    postMessage(input: { room: string; participantId: string; body: string; deliberationId?: string }): Message {
+    postMessage(input: { room: string; participantId: string; body: string; deliberationId?: string }): PostedMessage {
       const participant = requireParticipant(input.participantId);
       const room = requireRoom(input.room, participant.id);
       if (!isMember(room.id, participant.id)) {
@@ -636,8 +641,11 @@ export function openQuorum(options: QuorumOptions = {}) {
         deliberationId,
         createdAt: at,
       };
-      appendEvent('message', room.id, { message, from: participant.name }, participant.id);
-      return message;
+      // An @mention forks this message into a DM thread (#84): a reference,
+      // no second event — the forks ride this one's payload.
+      const forks = mentionForks.fork(message, participant);
+      appendEvent('message', room.id, forks.length > 0 ? { message, from: participant.name, forks } : { message, from: participant.name }, participant.id);
+      return { ...message, forks };
     },
 
     readMessages(input: { room: string; afterId?: number; limit?: number; viewerId?: string | null }): Message[] {
