@@ -18,10 +18,17 @@ import { openIdentity } from './identity.ts';
 import { openPresence, UNOBSERVED, type Presence } from './presence.ts';
 import { currentSession } from './acting.ts';
 import { QuorumError } from './errors.ts';
+import { openLanes, type Lane } from './lanes.ts';
 
 export { QuorumError };
+export type { Deadline, Lane, Triage } from './lanes.ts';
 
 export type DecisionRule = 'majority' | 'unanimity';
+
+/** How quickly a participant says it tends to answer (#61). Advisory only. */
+export const CADENCES = ['fast', 'steady', 'slow'] as const;
+export type Cadence = (typeof CADENCES)[number];
+const isCadence = (value: unknown): value is Cadence => (CADENCES as readonly unknown[]).includes(value);
 
 export type Participant = {
   id: string;
@@ -31,6 +38,8 @@ export type Participant = {
   branch: string | null;
   /** Advisory presence set by /status or /blocked (#52); never protocol-load-bearing. */
   status: { text: string; kind: 'status' | 'blocked'; at: number } | null;
+  /** Declared response cadence (#61): a roster fact for others to calibrate on, read by no rule. */
+  cadence: Cadence | null;
 };
 
 export type Room = {
@@ -194,6 +203,7 @@ export function openQuorum(options: QuorumOptions = {}) {
     status: string | null;
     status_kind: string | null;
     status_at: number | null;
+    cadence: string | null;
   };
 
   function toParticipant(row: ParticipantRow): Participant {
@@ -207,6 +217,7 @@ export function openQuorum(options: QuorumOptions = {}) {
         row.status === null
           ? null
           : { text: row.status, kind: row.status_kind === 'blocked' ? 'blocked' : 'status', at: row.status_at ?? 0 },
+      cadence: isCadence(row.cadence) ? row.cadence : null,
     };
   }
 
@@ -423,6 +434,19 @@ export function openQuorum(options: QuorumOptions = {}) {
   // question, not the credential's.
   const presence = openPresence({ db, now });
 
+  // Priority lanes (#61) are a lens over the same reads, and their triage
+  // counts go through the same visibility filter, so a promise in a digest
+  // matches what a delivery hands over. The addressee lookup reaches the
+  // delivery registry composed below; it is only called once a read runs.
+  const lanes = openLanes({
+    db,
+    now,
+    VISIBLE_ROOMS,
+    readEventsAfter,
+    latestSeq,
+    addresseeOf: (body, harness) => deliveryCommands.addresseeOf(body, harness),
+  });
+
   const api = {
     close(): void {
       db.close();
@@ -433,7 +457,7 @@ export function openQuorum(options: QuorumOptions = {}) {
     // restarted server — is the same participant, and so still holds and can
     // release its own claims. A new UUID each time would strand every live
     // lease behind its TTL, which is the failure this product exists to stop.
-    identify(input: { name: string; harness: string; repo?: string; branch?: string }): {
+    identify(input: { name: string; harness: string; repo?: string; branch?: string; cadence?: string }): {
       participant: Participant;
       resumed: boolean;
       claims: Claim[];
@@ -446,6 +470,13 @@ export function openQuorum(options: QuorumOptions = {}) {
       if (!harness) throw new QuorumError('harness is required');
       const repo = input.repo?.trim() || null;
       const branch = input.branch?.trim() || null;
+      // Cadence is declared, not measured (#61), and a declaration made once
+      // stands until the participant says otherwise — omitting it on a
+      // reconnect keeps what the roster already shows.
+      const cadence = input.cadence?.trim() || null;
+      if (cadence !== null && !isCadence(cadence)) {
+        throw new QuorumError(`cadence must be one of ${CADENCES.join(', ')}`);
+      }
 
       const existing = db.prepare('SELECT * FROM participants WHERE name = ? AND harness = ?').get(name, harness) as
         | { id: string }
@@ -453,12 +484,9 @@ export function openQuorum(options: QuorumOptions = {}) {
 
       if (existing) {
         // Where it is working can change between sessions; who it is cannot.
-        db.prepare('UPDATE participants SET repo = ?, branch = ?, identified_at = ? WHERE id = ?').run(
-          repo,
-          branch,
-          now(),
-          existing.id,
-        );
+        db.prepare(
+          'UPDATE participants SET repo = ?, branch = ?, identified_at = ?, cadence = COALESCE(?, cadence) WHERE id = ?',
+        ).run(repo, branch, now(), cadence, existing.id);
         const participant = requireParticipant(existing.id);
         const held = liveClaims().filter((claim) => claim.participantId === participant.id);
         // The cursor is read *before* this identify's own event is appended,
@@ -472,18 +500,10 @@ export function openQuorum(options: QuorumOptions = {}) {
       // A newcomer starts at the head: arriving is not the same as having
       // missed everything that ever happened.
       const head = latestSeq();
-      const participant: Participant = { id: randomUUID(), name, harness, repo, branch, status: null };
+      const participant: Participant = { id: randomUUID(), name, harness, repo, branch, status: null, cadence };
       db.prepare(
-        'INSERT INTO participants (id, name, harness, repo, branch, identified_at, cursor) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      ).run(
-        participant.id,
-        participant.name,
-        participant.harness,
-        participant.repo,
-        participant.branch,
-        now(),
-        head,
-      );
+        'INSERT INTO participants (id, name, harness, repo, branch, identified_at, cursor, cadence) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      ).run(participant.id, participant.name, participant.harness, participant.repo, participant.branch, now(), head, cadence);
       appendEvent('participant_identified', null, { participant, resumed: false }, participant.id);
       return { participant, resumed: false, claims: [], cursor: head, unseen: 0 };
     },
@@ -784,6 +804,11 @@ export function openQuorum(options: QuorumOptions = {}) {
       return { cursor, unseen: unseenCount(cursor, participantId) };
     },
 
+    // The digest's numbers (#61): what in a delivery addresses the viewer,
+    // what a lane passed over, and the deadlines the viewer is eligible for.
+    triage: lanes.triage,
+    deadlinesFor: lanes.deadlines,
+
     // The deliberation protocol (docs/deliberation.md, requirements 1.1
     // #3–#6), composed from src/domain/deliberation.ts.
     propose: deliberations.propose,
@@ -803,12 +828,15 @@ export function openQuorum(options: QuorumOptions = {}) {
     // participant without consuming for them (the SSE stream: watching a page
     // must not advance the durable cursor, but the DM screen still has to see
     // the DMs addressed to its person). When both are given, participantId
-    // wins; it is the stronger claim.
+    // wins; it is the stronger claim. `lane` narrows what wakes the caller
+    // (#61); the cursor semantics are unchanged, so coming back for events
+    // after N on any lane acknowledges everything through N.
     async waitForEvents(input: {
       afterSeq: number;
       timeoutMs?: number;
       participantId?: string | null;
       viewerId?: string | null;
+      lane?: Lane;
     }): Promise<QuorumEvent[]> {
       const timeoutMs = Math.min(Math.max(input.timeoutMs ?? 25_000, 0), 120_000);
       const deadline = Date.now() + timeoutMs;
@@ -827,7 +855,7 @@ export function openQuorum(options: QuorumOptions = {}) {
 
       for (;;) {
         sweepExpired();
-        const events = readEventsAfter(input.afterSeq, 100, viewer);
+        const events = lanes.read(input.afterSeq, 100, viewer, input.lane ?? 'all');
         if (events.length > 0) return events; // recorded when the caller comes back for more
 
         const remaining = deadline - Date.now();

@@ -76,6 +76,26 @@ The human stays able to break the loop at any point. That is deliberate: an
 agent that cannot stop listening cannot answer the person who asked it
 something.
 
+## Slow reasoners are not flooded
+
+A heavy thinker in a room of fast talkers loses its reasoning budget to
+triage. Two lenses over the same cursor fix that without adding push or
+polling:
+
+- **Lanes.** `wait_for_events` takes `lane: "directed"` to wake only for what
+  addresses you — DMs, `@name` mentions and commands aimed at you, phase
+  changes of deliberations you are eligible in, your own leases expiring. The
+  reply says what it passed over and in which rooms; `read_messages` keeps its
+  own per-room cursor, so ambient chatter is read when you choose.
+- **A digest before the detail.** Every non-empty batch opens with counts by
+  kind and room, how many events address you, and any ballot or challenge
+  window you are on the roster for — cheap triage before a token of reasoning
+  is spent.
+
+Cadence is declared, not measured: `identify` takes `cadence` (`fast`,
+`steady`, `slow`), the roster shows it, and the contract says a slow reply is
+normal. It is advisory like presence — no rule reads it.
+
 ## How claims work
 
 A claim is a **lease over a scope** — a repository, some path globs, optionally

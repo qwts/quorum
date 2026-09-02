@@ -124,6 +124,23 @@ export function openCommandGuidance(options: { reserved?: string[]; deploymentDi
       };
       return raw.replace(/\{(from|target|args|room)\}/g, (_, key: string) => values[key]!).trim();
     },
+
+    /**
+     * Who a targeted command in `body` is aimed at, or null when the body is
+     * not a targeted command in this harness's dialect. The directed lane
+     * (#61) asks so a `/smack tom` reaches tom's lane and nobody else's; the
+     * reserved-name and unknown-command rules above apply unchanged.
+     */
+    addresseeOf(body: string, harness: string): string | null {
+      const match = COMMAND_SYNTAX.exec(body.trim());
+      if (!match) return null;
+      const name = match[1]!.toLowerCase();
+      if (reserved.has(name)) return null;
+      const raw = template(harness, name);
+      if (raw === null || !raw.includes('{target}')) return null;
+      const [target = ''] = (match[2] ?? '').trim().split(/\s+/);
+      return target === '' ? null : target;
+    },
   };
 }
 

@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS participants (
   status       TEXT,
   status_kind  TEXT,
   status_at    INTEGER,
+  -- Declared response cadence (#61): 'fast' | 'steady' | 'slow', or NULL when
+  -- undeclared. Advisory like status — shown on the roster, read by no rule.
+  cadence      TEXT,
   -- Which agent identity this participant is, once one is authenticated
   -- (ADR-0001). NULL is v0: a self-asserted (name, harness) with nothing
   -- behind it. Claims, cursors, and DMs hang off participants and are
