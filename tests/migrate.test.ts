@@ -168,7 +168,7 @@ test('a migration is applied once, and reopening applies nothing', () => {
     const first = raw.prepare('SELECT id, name, applied_at FROM schema_migrations ORDER BY id').all();
     assert.deepEqual(
       first.map((row) => (row as { id: number }).id),
-      [1, 2, 3],
+      [1, 2, 3, 4],
       'the ledger names every migration this version knows',
     );
 

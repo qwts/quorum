@@ -53,8 +53,8 @@ const EXCEPTIONS: Record<string, { limit: number; why: string }> = {
     why: 'The identity revocation tree must keep each node mutation, its downward grant and session cascade, the claim-close callback, and the enclosing transaction together. Splitting #74 across modules would make the security invariant look atomic while allowing half a cascade to commit.',
   },
   'src/domain/quorum.ts': {
-    limit: 915,
-    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany. Grew the audience filter (#42), participant status and command composition (#52), the occupants read (#56), the shared claim-refusal record (#15), and identity (#50) — whose tables live in identity.ts, session.ts, and tree.ts, so what lands here is the composition plus the one line of appendEvent that stamps a session on an action, then delivery guidance (#51), presence (#17), and #74\'s claim-close callback, which must share the claim mutation and event. Held flat where real seams exist: schema history is migrate.ts, room resolution is authority.ts, and the lifecycle verbs (#80) are lifecycle.ts — what lands here is their composition.',
+    limit: 955,
+    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany. Grew the audience filter (#42), participant status and command composition (#52), the occupants read (#56), the shared claim-refusal record (#15), and identity (#50) — whose tables live in identity.ts, session.ts, and tree.ts, so what lands here is the composition plus the one line of appendEvent that stamps a session on an action, then delivery guidance (#51), presence (#17), and #74\'s claim-close callback, which must share the claim mutation and event. Held flat where real seams exist: schema history is migrate.ts, room resolution is authority.ts, the lane predicate is lanes.ts (#61) — what lands here for lanes is the composition, the declared cadence on identify, and the wait loop that routes through a lane and keeps its scan position across wakes — and the lifecycle verbs (#80) are lifecycle.ts, composed here.',
   },
   'src/mcp/server.ts': {
     limit: 285,
@@ -73,8 +73,8 @@ const EXCEPTIONS: Record<string, { limit: number; why: string }> = {
     why: 'The overlay lifecycle keeps URL state, immutable-record loading, the persistent challenge composer, and the stable ballot-panel boundary together. Issue #60 splits the ballot selection fold and panel renderer into their own modules; what remains here is the coordination that prevents an event echo from rebuilding either live control.',
   },
   'src/mcp/tools.ts': {
-    limit: 860,
-    why: 'Hand-written JSON Schema, which is verbose by choice — the wire contract is the product (AGENTS.md), so it reads as the contract it is rather than being generated. Ratcheted down when the DM family moved to dms.ts (#42); grew list_open_deliberations (#35), then identify\'s asserted provenance inputs (#50) — the contract for an input belongs beside the tool it is an input to, then the delivery footers (#51), then the two presence clauses (#17), which belong beside the guidance they qualify: a file of their own would separate a sentence from the reply it is a sentence in. The lifecycle family (#80) lives in lifecycle.ts and slots in here.',
+    limit: 815,
+    why: 'Hand-written JSON Schema, which is verbose by choice — the wire contract is the product (AGENTS.md), so it reads as the contract it is rather than being generated. Ratcheted down when the DM family moved to dms.ts (#42) and again when the feed tool moved to feed.ts (#61); grew list_open_deliberations (#35), then identify\'s asserted provenance inputs (#50) — the contract for an input belongs beside the tool it is an input to, then the delivery footers (#51), then the two presence clauses (#17), which belong beside the guidance they qualify: a file of their own would separate a sentence from the reply it is a sentence in. The lifecycle family (#80) lives in lifecycle.ts and slots in here.',
   },
 };
 
