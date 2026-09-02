@@ -80,25 +80,34 @@ export function callLifecycleTool(quorum: Quorum, session: Session, name: string
 
     case 'rename_room': {
       const participantId = requireIdentity(session);
-      const room = quorum.renameRoom({ room: str(args, 'room') ?? '', participantId, name: str(args, 'name') ?? '' });
+      const { room, changed } = quorum.renameRoom({
+        room: str(args, 'room') ?? '',
+        participantId,
+        name: str(args, 'name') ?? '',
+      });
       return {
-        guidance:
-          `The room is now ${quoted(room.name)}; its id is unchanged, so keep using either.` +
-          ` Members see room_renamed on the feed. post_message if the reason belongs on the record.`,
-        data: { room },
+        guidance: changed
+          ? `The room is now ${quoted(room.name)}; its id is unchanged, so keep using either.` +
+            ` Members see room_renamed on the feed. post_message if the reason belongs on the record.`
+          : `The room was already named ${quoted(room.name)}; nothing changed and no event was recorded.`,
+        data: { room, changed },
       };
     }
 
     case 'set_topic': {
       const participantId = requireIdentity(session);
-      const room = quorum.setTopic({ room: str(args, 'room') ?? '', participantId, topic: str(args, 'topic') ?? null });
+      const { room, changed } = quorum.setTopic({
+        room: str(args, 'room') ?? '',
+        participantId,
+        topic: str(args, 'topic') ?? null,
+      });
+      const topic = room.topic === null ? 'no topic' : `the topic ${quoted(room.topic)}`;
       return {
-        guidance:
-          (room.topic === null
-            ? `Topic of ${quoted(room.name)} cleared.`
-            : `Topic of ${quoted(room.name)} set to ${quoted(room.topic)}.`) +
-          ` Members see room_topic_set on the feed. wait_for_events to stay with the room.`,
-        data: { room },
+        guidance: changed
+          ? `${quoted(room.name)} now has ${topic}. Members see room_topic_set on the feed.` +
+            ` wait_for_events to stay with the room.`
+          : `${quoted(room.name)} already had ${topic}; nothing changed and no event was recorded.`,
+        data: { room, changed },
       };
     }
 

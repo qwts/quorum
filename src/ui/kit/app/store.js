@@ -137,6 +137,17 @@ export function roomByName(state, name) {
   return undefined;
 }
 
+/**
+ * The name the open room now goes by when `event` renamed it (#80), else
+ * null. The controller addresses the open room by name — the URL does — so a
+ * rename has to move the address, or the next render finds no room.
+ * @param {any} event @param {string} openRoom
+ */
+export function renamedTo(event, openRoom) {
+  if (event?.kind !== 'room_renamed' || event.payload?.previousName !== openRoom) return null;
+  return String(event.payload.room?.name ?? openRoom);
+}
+
 /** @param {State} state @param {string|undefined} roomId */
 export function messagesIn(state, roomId) {
   return (roomId && state.messages.get(roomId)) || [];

@@ -64,6 +64,10 @@ const EXCEPTIONS: Record<string, { limit: number; why: string }> = {
     limit: 580,
     why: 'The protocol state machine. Its phases only make sense read together; the seams it does have are documented in docs/deliberation.md §8. Issue #73 adds the ballot-session write and close-time immutable-record annotation at those two phase boundaries; extracting either would hide the D6/D9 transaction it must share.',
   },
+  'src/ui/kit/app/room.js': {
+    limit: 275,
+    why: 'The room controller: the address (URL, history, title), the paint buffer, and the feed, which must agree on what "the open room" is. A rename of the open room (#80) has to move the address, and that belongs beside pushState and popstate, not in a module that cannot see them.',
+  },
   'src/ui/kit/app/room-overlay.js': {
     limit: 300,
     why: 'The overlay lifecycle keeps URL state, immutable-record loading, the persistent challenge composer, and the stable ballot-panel boundary together. Issue #60 splits the ballot selection fold and panel renderer into their own modules; what remains here is the coordination that prevents an event echo from rebuilding either live control.',

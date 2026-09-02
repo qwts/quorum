@@ -19,6 +19,14 @@ import { visibleNameTaken } from './authority.ts';
 import { QuorumError } from './errors.ts';
 import type { Participant, Room } from './quorum.ts';
 
+/**
+ * A verb's result, and whether it was a change. A no-op — renaming a room to
+ * its own name, setting the topic it has — mutates nothing and appends no
+ * event, and a caller told to expect the event would wait for one that never
+ * comes (Codex on #139), so the answer says which it was.
+ */
+export type Changed<T> = { room: T; changed: boolean };
+
 /** Everything lifecycle verbs need from the host domain, and nothing more. */
 export type Deps = {
   db: DatabaseSync;
@@ -63,20 +71,20 @@ export function openLifecycle(deps: Deps) {
      * applies (ADR-0002 §6): a collision the caller cannot see is never
      * reported, and the partial index still refuses the write.
      */
-    renameRoom(input: { room: string; participantId: string; name: string }): Room {
+    renameRoom(input: { room: string; participantId: string; name: string }): Changed<Room> {
       const participant = requireParticipant(input.participantId);
       const room = requireRoom(input.room, participant.id);
       requireCreator(room, participant, 'rename');
       const name = input.name?.trim();
       if (!name) throw new QuorumError('a room needs a name');
-      if (name === room.name) return room;
+      if (name === room.name) return { room, changed: false };
       if (visibleNameTaken(db, name, participant.id)) {
         throw new QuorumError(`room already exists: ${JSON.stringify(name)}`);
       }
       db.prepare('UPDATE rooms SET name = ? WHERE id = ?').run(name, room.id);
       const renamed = requireRoom(room.id, participant.id);
       appendEvent('room_renamed', room.id, { room: renamed, previousName: room.name }, participant.id);
-      return renamed;
+      return { room: renamed, changed: true };
     },
 
     /**
@@ -84,16 +92,16 @@ export function openLifecycle(deps: Deps) {
      * the one field on a room that is optional at creation, so it is the one
      * that can be taken away.
      */
-    setTopic(input: { room: string; participantId: string; topic: string | null | undefined }): Room {
+    setTopic(input: { room: string; participantId: string; topic: string | null | undefined }): Changed<Room> {
       const participant = requireParticipant(input.participantId);
       const room = requireRoom(input.room, participant.id);
       requireCreator(room, participant, 'change the topic of');
       const topic = input.topic?.trim() || null;
-      if (topic === room.topic) return room;
+      if (topic === room.topic) return { room, changed: false };
       db.prepare('UPDATE rooms SET topic = ? WHERE id = ?').run(topic, room.id);
-      const changed = requireRoom(room.id, participant.id);
-      appendEvent('room_topic_set', room.id, { room: changed, previousTopic: room.topic }, participant.id);
-      return changed;
+      const retopiced = requireRoom(room.id, participant.id);
+      appendEvent('room_topic_set', room.id, { room: retopiced, previousTopic: room.topic }, participant.id);
+      return { room: retopiced, changed: true };
     },
 
     /**

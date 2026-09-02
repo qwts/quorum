@@ -74,7 +74,17 @@ test('rename and topic are the creator\'s, reach the other member as events, and
 
   const topic = await call(ada, 'set_topic', { room: 'wire', topic: '' });
   assert.equal((topic.structuredContent?.room as { topic: string | null }).topic, null, 'an empty topic clears it');
-  assert.match(text(topic), /cleared/);
+  assert.match(text(topic), /now has no topic/);
+
+  // A no-op says it was one, so a client does not wait for an event that
+  // never comes (Codex on #139).
+  const same = await call(ada, 'rename_room', { room: 'wire', name: 'wire' });
+  assert.equal(same.structuredContent?.changed, false);
+  assert.match(text(same), /already named "wire"; nothing changed and no event was recorded/);
+  assert.doesNotMatch(text(same), /Members see/);
+  const still = await call(ada, 'set_topic', { room: 'wire', topic: '  ' });
+  assert.equal(still.structuredContent?.changed, false);
+  assert.match(text(still), /already had no topic; nothing changed/);
 
   const seen = await call(sol, 'wait_for_events', { after_seq: cursor, timeout_ms: 100 });
   const kinds = (seen.structuredContent?.events as { kind: string; payload: { previousName?: string } }[]).map(

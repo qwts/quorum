@@ -45,7 +45,7 @@ export type Deps = {
   // Lifecycle verbs (#80) reach back through the api like createRoom does,
   // so a command and its tool twin are one implementation.
   leaveRoom: (input: { room: string; participantId: string }) => Room;
-  setTopic: (input: { room: string; participantId: string; topic: string | null }) => Room;
+  setTopic: (input: { room: string; participantId: string; topic: string | null }) => { room: Room; changed: boolean };
   clearStatus: (input: { participantId: string }) => Participant;
 };
 
@@ -250,8 +250,9 @@ export function buildRegistry(deps: Deps): Command[] {
       usage: '/topic [text]',
       recorded: true,
       run: ({ sender, args, room }) => {
-        const changed = deps.setTopic({ room: room().id, participantId: sender.id, topic: args || null });
-        return changed.topic ? `Topic of #${changed.name} is now: ${changed.topic}` : `Topic of #${changed.name} cleared.`;
+        const { room: where, changed } = deps.setTopic({ room: room().id, participantId: sender.id, topic: args || null });
+        if (!changed) return where.topic ? `Topic of #${where.name} was already: ${where.topic}` : `#${where.name} had no topic to clear.`;
+        return where.topic ? `Topic of #${where.name} is now: ${where.topic}` : `Topic of #${where.name} cleared.`;
       },
     },
     {

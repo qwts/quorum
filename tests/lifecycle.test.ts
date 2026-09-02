@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { openQuorum } from '../src/domain/quorum.ts';
-import { apply, emptyState, seed } from '../src/ui/kit/app/store.js';
+import { apply, emptyState, renamedTo, seed } from '../src/ui/kit/app/store.js';
 
 function setup() {
   const quorum = openQuorum();
@@ -68,7 +68,8 @@ test('a rename keeps the id and everything hanging off it, and carries the old n
   assert.equal(claim.ok, true);
   const before = quorum.latestSeq();
 
-  const renamed = quorum.renameRoom({ room: 'protocol', participantId: chris.id, name: 'wire' });
+  const { room: renamed, changed } = quorum.renameRoom({ room: 'protocol', participantId: chris.id, name: 'wire' });
+  assert.equal(changed, true);
   assert.equal(renamed.id, room.id, 'same room');
   assert.equal(renamed.name, 'wire');
   assert.equal(renamed.topic, 'the wire', 'nothing else moved');
@@ -99,7 +100,8 @@ test('renaming to the same name is a no-op with no event', () => {
   const { quorum, chris } = setup();
   const before = quorum.latestSeq();
   const same = quorum.renameRoom({ room: 'protocol', participantId: chris.id, name: 'protocol' });
-  assert.equal(same.name, 'protocol');
+  assert.equal(same.room.name, 'protocol');
+  assert.equal(same.changed, false, 'the caller is told it was a no-op, so nobody waits for an event');
   assert.equal(quorum.latestSeq(), before, 'nothing happened, so nothing is recorded');
 });
 
@@ -108,11 +110,11 @@ test('the topic can be set, changed, and cleared, each on the feed with what it 
   const before = quorum.latestSeq();
 
   const set = quorum.setTopic({ room: 'protocol', participantId: chris.id, topic: '  the loop  ' });
-  assert.equal(set.topic, 'the loop', 'trimmed');
+  assert.deepEqual([set.room.topic, set.changed], ['the loop', true], 'trimmed');
   const cleared = quorum.setTopic({ room: 'protocol', participantId: chris.id, topic: '' });
-  assert.equal(cleared.topic, null, 'an empty topic clears it');
+  assert.deepEqual([cleared.room.topic, cleared.changed], [null, true], 'an empty topic clears it');
   const again = quorum.setTopic({ room: 'protocol', participantId: chris.id, topic: null });
-  assert.equal(again.topic, null);
+  assert.deepEqual([again.room.topic, again.changed], [null, false], 'clearing a clear topic is a no-op, and says so');
 
   const events = quorum.readEvents({ afterSeq: before, viewerId: fable.id });
   assert.deepEqual(events.map((e) => e.kind), ['room_topic_set', 'room_topic_set'], 'clearing a clear topic is not a fact');
@@ -199,6 +201,8 @@ test('/topic is an action on the record: the typed line, then room_topic_set; ba
 
   const cleared = await quorum.post({ room: 'protocol', participantId: chris.id, body: '/topic' });
   assert.match(cleared.command!.text, /Topic of #protocol cleared/);
+  const nothing = await quorum.post({ room: 'protocol', participantId: chris.id, body: '/topic' });
+  assert.match(nothing.command!.text, /#protocol had no topic to clear/, 'a no-op answers as one');
   assert.equal(quorum.listRooms().find((r) => r.name === 'protocol')?.topic, null);
 
   await assert.rejects(
@@ -242,4 +246,12 @@ test('the browser store folds a leave, a rename, and a topic like the room facts
   state = apply(state, event(8, 'room_topic_set', { room: { ...renamed, topic: null }, previousTopic: 'the wire' }));
   assert.equal(state.rooms.get('r1')?.topic, null);
   assert.equal(state.rooms.get('r1')?.name, 'wire');
+});
+
+test('the controller follows a rename of the open room, and only the open room', () => {
+  const renamed = { kind: 'room_renamed', payload: { room: { id: 'r1', name: 'wire' }, previousName: 'protocol' } };
+  assert.equal(renamedTo(renamed, 'protocol'), 'wire', 'the open room moves with its new name');
+  assert.equal(renamedTo(renamed, 'design'), null, 'another room renaming is not this address');
+  assert.equal(renamedTo({ kind: 'room_topic_set', payload: { room: { id: 'r1', name: 'wire' } } }, 'wire'), null);
+  assert.equal(renamedTo(null, 'protocol'), null);
 });
