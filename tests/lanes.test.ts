@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { openQuorum, QuorumError } from '../src/domain/quorum.ts';
-import { mentions } from '../src/domain/lanes.ts';
+import { MAX_SCAN, mentions } from '../src/domain/lanes.ts';
 
 function withClock(start = 1_700_000_000_000) {
   let current = start;
@@ -85,7 +85,7 @@ test('the directed lane hands over mentions and DMs, and drops ambient chatter a
 
   // The digest's numbers: the two seqs address ada, and everything visible
   // between her cursor and the last handed event was passed over.
-  const triage = quorum.triage({ viewerId: ada.id, afterSeq: 0, delivered: events });
+  const triage = quorum.triage({ viewerId: ada.id, afterSeq: 0, delivered: events, lane: 'directed' });
   assert.deepEqual(triage.directed, events.map((event) => event.seq));
   const visible = quorum.readEvents({ afterSeq: 0, limit: 500, viewerId: ada.id }).filter(
     (event) => event.seq <= events[events.length - 1]!.seq,
@@ -201,13 +201,31 @@ test('the limit stays honest across pages of ambient chatter', async () => {
   const events = await directed(quorum, ada.id);
   assert.equal(events.length, 1, 'the mention past the first page is found');
   assert.equal((events[0]!.payload.message as { body: string }).body, '@ada finally');
-  const triage = quorum.triage({ viewerId: ada.id, afterSeq: 0, delivered: events });
+  const triage = quorum.triage({ viewerId: ada.id, afterSeq: 0, delivered: events, lane: 'directed' });
   assert.ok(triage.passedOver.total >= 150);
 
   // The all lane skips nothing, so it passes over nothing.
   const all = await quorum.waitForEvents({ afterSeq: 0, timeoutMs: 0, participantId: ada.id });
   assert.equal(all.length, 100);
-  assert.equal(quorum.triage({ viewerId: ada.id, afterSeq: 0, delivered: all }).passedOver.total, 0);
+  assert.equal(quorum.triage({ viewerId: ada.id, afterSeq: 0, delivered: all, lane: 'all' }).passedOver.total, 0);
+});
+
+test('a mention past MAX_SCAN ambient events is still found, in bounded slices', async () => {
+  const quorum = fresh();
+  const ada = agent(quorum, 'ada');
+  const grace = agent(quorum, 'grace');
+  quorum.createRoom({ name: 'flood', by: grace.id });
+  quorum.joinRoom({ room: 'flood', participantId: ada.id });
+  for (let i = 0; i < MAX_SCAN + 50; i += 1) {
+    quorum.postMessage({ room: 'flood', participantId: grace.id, body: `flood ${i}` });
+  }
+  quorum.postMessage({ room: 'flood', participantId: grace.id, body: '@ada past the cap' });
+
+  const events = await directed(quorum, ada.id);
+  assert.deepEqual(events.map((event) => (event.payload.message as { body: string }).body), ['@ada past the cap']);
+  // Counted in SQL, not materialized: the whole flood is reported.
+  const triage = quorum.triage({ viewerId: ada.id, afterSeq: 0, delivered: events, lane: 'directed' });
+  assert.ok(triage.passedOver.total >= MAX_SCAN + 50);
 });
 
 test('a directed wait sleeps through chatter and wakes for a DM', async () => {

@@ -20,8 +20,12 @@
 //   4. A server event about you: your own lease expiring or being revoked,
 //      or you being kicked from a room.
 //
-// Your own actions never address you — an echo is not a call — so the lane
-// drops events you authored yourself.
+// Your own actions never address you: an echo is not a call.
+//
+// Cost is the other half. A directed read walks ambient events it will not
+// hand over, in a process every client shares, so the walk is bounded
+// (`MAX_SCAN` per call; the caller resumes from `scannedTo`) and makes no
+// query per event: rosters and audience-scoped seqs come one query per page.
 
 import type { DatabaseSync } from 'node:sqlite';
 
@@ -53,6 +57,13 @@ export type Triage = {
   deadlines: Deadline[];
 };
 
+/**
+ * One read. `scannedTo` is the last seq examined — resume there, not at the
+ * cursor; `exhausted` is false when `MAX_SCAN` stopped the scan short of the
+ * head, and the caller should come straight back rather than sleep.
+ */
+export type LaneRead = { events: QuorumEvent[]; scannedTo: number; exhausted: boolean };
+
 export type Deps = {
   db: DatabaseSync;
   now: () => number;
@@ -68,6 +79,9 @@ type Viewer = { id: string; name: string; harness: string };
 /** One page of the underlying read while the lane looks for what it wants. */
 const PAGE = 100;
 
+/** Ambient events one directed read may walk before handing control back. */
+export const MAX_SCAN = 1_000;
+
 // A mention is `@` followed by the whole name, standing alone: not a
 // fragment of a longer token on either side (`email@ada`, `@ada2`). The name
 // class mirrors what names on this server look like — `claude:auth-refactor`
@@ -79,37 +93,49 @@ export function mentions(body: string, name: string): boolean {
   return new RegExp(`(?<!${NAME_CHAR})@${escaped}(?!${NAME_CHAR})`, 'u').test(body);
 }
 
+// The filter every read applies (src/domain/quorum.ts readEventsAfter), so a
+// count here never exceeds what a read would deliver. Binds viewer twice.
+const VISIBLE_EVENTS = (visibleRooms: string) =>
+  `(audience IS NULL OR EXISTS (SELECT 1 FROM json_each(events.audience) WHERE json_each.value = ?))
+   AND (events.room_id IS NULL OR EXISTS (SELECT 1 FROM rooms WHERE rooms.id = events.room_id AND ${visibleRooms}))`;
+
 export function openLanes(deps: Deps) {
   const { db } = deps;
+  const visible = VISIBLE_EVENTS(deps.VISIBLE_ROOMS);
 
   function viewerOf(id: string | null): Viewer | null {
     if (id === null) return null; // an unidentified observer: nothing addresses it
     return (db.prepare('SELECT id, name, harness FROM participants WHERE id = ?').get(id) as Viewer | undefined) ?? null;
   }
 
-  function onRoster(deliberationId: unknown, viewerId: string): boolean {
-    if (typeof deliberationId !== 'string') return false;
-    return (
-      db
-        .prepare(
-          `SELECT 1 FROM deliberations
-            WHERE id = ? AND EXISTS (SELECT 1 FROM json_each(deliberations.eligible) WHERE json_each.value = ?)`,
-        )
-        .get(deliberationId, viewerId) !== undefined
-    );
+  // The deliberations whose frozen roster names the viewer, one query per
+  // read. Closed ones stay in: their closing event is the viewer's business.
+  function rostersOf(viewerId: string): Set<string> {
+    const rows = db
+      .prepare(
+        `SELECT id FROM deliberations
+          WHERE EXISTS (SELECT 1 FROM json_each(deliberations.eligible) WHERE json_each.value = ?)`,
+      )
+      .all(viewerId) as { id: string }[];
+    return new Set(rows.map((row) => row.id));
   }
 
-  // The stored row is the proof: an event the read handed this viewer with a
-  // non-null audience named the viewer, or the read would have refused it.
-  function audienceScoped(seq: number): boolean {
-    const row = db.prepare('SELECT audience FROM events WHERE seq = ?').get(seq) as { audience: string | null } | undefined;
-    return row?.audience != null;
+  // The audience-scoped seqs within a page: a read already proved each names
+  // the viewer, or it would have refused the row.
+  function audiencedIn(from: number, to: number): Set<number> {
+    const rows = db
+      .prepare('SELECT seq FROM events WHERE seq > ? AND seq <= ? AND audience IS NOT NULL')
+      .all(from, to) as { seq: number }[];
+    return new Set(rows.map((row) => row.seq));
   }
 
-  function isDirected(event: QuorumEvent, viewer: Viewer): boolean {
+  type Lens = { viewer: Viewer; rosters: Set<string>; audienced: Set<number> };
+
+  function isDirected(event: QuorumEvent, lens: Lens): boolean {
+    const { viewer } = lens;
     if (event.actorId === viewer.id) return false;
     const payload = event.payload;
-    if (onRoster(payload.deliberationId, viewer.id)) return true;
+    if (typeof payload.deliberationId === 'string' && lens.rosters.has(payload.deliberationId)) return true;
     if (event.kind === 'message') {
       const body = (payload.message as { body?: unknown } | undefined)?.body;
       if (typeof body !== 'string') return false;
@@ -121,33 +147,43 @@ export function openLanes(deps: Deps) {
     if (event.kind === 'participant_kicked') {
       return (payload.participant as { id?: unknown } | undefined)?.id === viewer.id;
     }
-    return audienceScoped(event.seq);
+    return lens.audienced.has(event.seq);
   }
 
   /**
-   * The next `limit` events past `afterSeq` on `lane`. The `all` lane is the
-   * plain read. The directed lane pages through the same read and keeps what
-   * addresses the viewer, so the limit stays honest — a page of events *for
-   * you*, not a page minus the ones that were not.
+   * The next `limit` events past `afterSeq` on `lane`. The directed lane
+   * pages through the plain read and keeps what addresses the viewer, so the
+   * limit stays honest — a page of events *for you* — and stops after
+   * `MAX_SCAN` ambient events so one slow reader cannot hold the process.
    */
-  function read(afterSeq: number, limit: number, viewerId: string | null, lane: Lane): QuorumEvent[] {
+  function read(afterSeq: number, limit: number, viewerId: string | null, lane: Lane): LaneRead {
     if (!(LANES as readonly string[]).includes(lane)) {
       throw new QuorumError(`lane must be one of ${LANES.join(', ')}`);
     }
-    if (lane === 'all') return deps.readEventsAfter(afterSeq, limit, viewerId);
+    if (lane === 'all') {
+      const events = deps.readEventsAfter(afterSeq, limit, viewerId);
+      return { events, scannedTo: events.length > 0 ? events[events.length - 1]!.seq : afterSeq, exhausted: true };
+    }
     const viewer = viewerOf(viewerId);
-    if (viewer === null) return [];
+    if (viewer === null) return { events: [], scannedTo: afterSeq, exhausted: true };
+    const rosters = rostersOf(viewer.id);
     const picked: QuorumEvent[] = [];
     let cursor = afterSeq;
+    let walked = 0;
     for (;;) {
       const page = deps.readEventsAfter(cursor, PAGE, viewer.id);
+      if (page.length === 0) return { events: picked, scannedTo: cursor, exhausted: true };
+      const last = page[page.length - 1]!.seq;
+      const lens: Lens = { viewer, rosters, audienced: audiencedIn(cursor, last) };
       for (const event of page) {
-        if (!isDirected(event, viewer)) continue;
+        cursor = event.seq;
+        if (!isDirected(event, lens)) continue;
         picked.push(event);
-        if (picked.length >= limit) return picked;
+        if (picked.length >= limit) return { events: picked, scannedTo: cursor, exhausted: true };
       }
-      if (page.length < PAGE) return picked;
-      cursor = page[page.length - 1]!.seq;
+      walked += page.length;
+      if (page.length < PAGE) return { events: picked, scannedTo: cursor, exhausted: true };
+      if (walked >= MAX_SCAN) return { events: picked, scannedTo: cursor, exhausted: false };
     }
   }
 
@@ -178,36 +214,43 @@ export function openLanes(deps: Deps) {
   }
 
   /**
-   * The numbers a digest is made of, for one delivery: which of the handed
-   * events address the viewer, what the lane passed over to hand them, and
-   * which deadlines the viewer is on the roster for. Counted through the same
-   * visibility filter as the reads (audience and room), so "9 passed over"
-   * are 9 the viewer could go and read.
+   * The numbers a digest is made of: which handed events address the viewer,
+   * what the lane passed over to hand them (counted in SQL through the same
+   * visibility filter as the reads, nothing materialized), and the deadlines
+   * the viewer is on the roster for.
    */
-  function triage(input: { viewerId: string | null; afterSeq: number; delivered: QuorumEvent[] }): Triage {
+  function triage(input: { viewerId: string | null; afterSeq: number; delivered: QuorumEvent[]; lane: Lane }): Triage {
     const viewer = viewerOf(input.viewerId);
     if (viewer === null) return { directed: [], passedOver: { total: 0, rooms: [] }, deadlines: [] };
-    const directed = input.delivered.filter((event) => isDirected(event, viewer)).map((event) => event.seq);
     const last = input.delivered[input.delivered.length - 1];
+    const lens: Lens = {
+      viewer,
+      rosters: rostersOf(viewer.id),
+      audienced: last === undefined ? new Set() : audiencedIn(input.afterSeq, last.seq),
+    };
+    const directed = input.delivered.filter((event) => isDirected(event, lens)).map((event) => event.seq);
+    const passedOver = input.lane === 'all' ? { total: 0, rooms: [] } : passedOverBy(viewer.id, input.afterSeq, input.delivered);
+    return { directed, passedOver, deadlines: deadlines(viewer.id) };
+  }
+
+  function passedOverBy(viewerId: string, afterSeq: number, delivered: QuorumEvent[]): Triage['passedOver'] {
+    const last = delivered[delivered.length - 1];
     const upTo = last === undefined ? deps.latestSeq() : last.seq;
-    const handed = new Set(input.delivered.map((event) => event.seq));
     const rows = db
       .prepare(
-        `SELECT seq, room_id FROM events
-          WHERE seq > ? AND seq <= ?
-            AND (audience IS NULL OR EXISTS (SELECT 1 FROM json_each(events.audience) WHERE json_each.value = ?))
-            AND (events.room_id IS NULL OR EXISTS (SELECT 1 FROM rooms WHERE rooms.id = events.room_id AND ${deps.VISIBLE_ROOMS}))`,
+        `SELECT room_id, COUNT(*) AS n FROM events
+          WHERE seq > ? AND seq <= ? AND ${visible}
+          GROUP BY room_id`,
       )
-      .all(input.afterSeq, upTo, viewer.id, viewer.id) as { seq: number; room_id: string | null }[];
-    const byRoom = new Map<string | null, number>();
-    let total = 0;
-    for (const row of rows) {
-      if (handed.has(row.seq)) continue;
-      total += 1;
-      byRoom.set(row.room_id, (byRoom.get(row.room_id) ?? 0) + 1);
-    }
-    const rooms = [...byRoom].map(([roomId, count]) => ({ roomId, count })).sort((a, b) => b.count - a.count);
-    return { directed, passedOver: { total, rooms }, deadlines: deadlines(viewer.id) };
+      .all(afterSeq, upTo, viewerId, viewerId) as { room_id: string | null; n: number }[];
+    const byRoom = new Map<string | null, number>(rows.map((row) => [row.room_id, row.n]));
+    // The handed events sit inside the counted range; take them back out.
+    for (const event of delivered) byRoom.set(event.roomId, (byRoom.get(event.roomId) ?? 0) - 1);
+    const rooms = [...byRoom]
+      .filter(([, count]) => count > 0)
+      .map(([roomId, count]) => ({ roomId, count }))
+      .sort((a, b) => b.count - a.count);
+    return { total: rooms.reduce((sum, room) => sum + room.count, 0), rooms };
   }
 
   return { read, triage, deadlines };

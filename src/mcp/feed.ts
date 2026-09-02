@@ -66,7 +66,14 @@ function counted(pairs: [string, number][]): string {
 
 type Digest = { line: string; data: Json };
 
-function digestOf(quorum: Quorum, viewerId: string | null, events: QuorumEvent[], triage: Triage, lane: Lane): Digest {
+function digestOf(
+  quorum: Quorum,
+  viewerId: string | null,
+  afterSeq: number,
+  events: QuorumEvent[],
+  triage: Triage,
+  lane: Lane,
+): Digest {
   const names = new Map(quorum.listRooms({ viewerId }).map((room) => [room.id, room.name]));
   const byKind = new Map<string, number>();
   const byRoom = new Map<string | null, number>();
@@ -100,9 +107,13 @@ function digestOf(quorum: Quorum, viewerId: string | null, events: QuorumEvent[]
   }
   if (lane === 'directed' && triage.passedOver.total > 0) {
     const where = counted(triage.passedOver.rooms.map(({ roomId, count }) => [roomLabel(names, roomId), count]));
+    // The catch-up names the cursor the caller *brought*, never the one this
+    // reply hands back: following the returned cursor acknowledges what was
+    // passed over, and off-room events (claims, arrivals) have no room to be
+    // read back from.
     parts.push(
       `${triage.passedOver.total} ambient event(s) ${events.length > 0 ? 'passed over' : 'waiting'} — ${where} —` +
-        ` read_messages there at your own pace, or wait_for_events with lane=all to take them in order.`,
+        ` read_messages there at your own pace, or wait_for_events with after_seq=${afterSeq} and lane=all to take them in order.`,
     );
   }
   return {
@@ -115,6 +126,8 @@ function digestOf(quorum: Quorum, viewerId: string | null, events: QuorumEvent[]
       directed: triage.directed,
       passed_over: {
         total: triage.passedOver.total,
+        // The cursor a lane=all replay starts from: what the caller brought.
+        after_seq: afterSeq,
         rooms: triage.passedOver.rooms.map(({ roomId, count }) => ({
           room: roomId === null ? null : (names.get(roomId) ?? roomId),
           count,
@@ -162,9 +175,14 @@ export async function waitForEventsTool(quorum: Quorum, session: Session, args: 
   // guidance below the rule, resolved against this caller's harness.
   // Derived here, at read time — the stored event stays the pure fact.
   const { delivered, footered } = deliverEvents(quorum, session.participantId, marked);
-  const triage = quorum.triage({ viewerId: session.participantId, afterSeq, delivered: events });
-  const digest = digestOf(quorum, session.participantId, events, triage, lane);
-  const again = `wait_for_events again with after_seq=${cursor}${lane === 'directed' ? ' and lane=directed' : ''}`;
+  const triage = quorum.triage({ viewerId: session.participantId, afterSeq, delivered: events, lane });
+  const digest = digestOf(quorum, session.participantId, afterSeq, events, triage, lane);
+  // On the directed lane, coming back for what follows the handed events is
+  // also the acknowledgement of everything passed over to reach them; the
+  // digest line above has already named the other choice.
+  const again =
+    `wait_for_events again with after_seq=${cursor}` +
+    (lane === 'directed' ? ' and lane=directed to stay on this lane' : '');
   const mine = marked.filter((event) => event.by_you).length;
   const fromServer = marked.filter((event) => event.by_server).length;
   const theirs = marked.length - mine - fromServer;

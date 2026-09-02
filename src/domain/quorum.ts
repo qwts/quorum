@@ -853,10 +853,21 @@ export function openQuorum(options: QuorumOptions = {}) {
       // through N arrived.
       acknowledgeCursor(input.participantId ?? null, input.afterSeq);
 
+      // The scan position outlives a wake: a directed waiter walks the ambient
+      // backlog once, not again for every chatter event that wakes the room.
+      // Only what the caller brings as after_seq acknowledges anything.
+      let scanFrom = input.afterSeq;
       for (;;) {
         sweepExpired();
-        const events = lanes.read(input.afterSeq, 100, viewer, input.lane ?? 'all');
+        const { events, scannedTo, exhausted } = lanes.read(scanFrom, 100, viewer, input.lane ?? 'all');
         if (events.length > 0) return events; // recorded when the caller comes back for more
+        scanFrom = scannedTo;
+        if (!exhausted) {
+          // A long backlog goes in bounded slices, the event loop given back
+          // between them, so one slow reader cannot stall the other clients.
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          continue;
+        }
 
         const remaining = deadline - Date.now();
         if (remaining <= 0) return [];

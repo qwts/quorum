@@ -46,7 +46,7 @@ type Digest = {
   by_kind: Record<string, number>;
   rooms: { room: string | null; count: number }[];
   directed: number[];
-  passed_over: { total: number; rooms: { room: string | null; count: number }[] };
+  passed_over: { total: number; after_seq: number; rooms: { room: string | null; count: number }[] };
   deadlines: { room: string; phase: string; ends_in_ms: number; cast: boolean }[];
 };
 
@@ -109,6 +109,10 @@ test('the directed lane delivers what addresses you and the digest says what it 
   assert.match(guidance, /2 ambient event\(s\) passed over — "lane-room" 2/);
   assert.match(guidance, /read_messages there at your own pace/);
   assert.match(guidance, /after_seq=\d+ and lane=directed/);
+  // The catch-up names the cursor ada brought, not the one handed back:
+  // following the new cursor would acknowledge the two passed over.
+  assert.match(guidance, new RegExp(`wait_for_events with after_seq=${cursor} and lane=all`));
+  assert.equal(digest.passed_over.after_seq, cursor);
 
   // The chatter is still readable: the room cursor is not the feed cursor.
   const read = await call(ada, 'read_messages', { room: 'lane-room' });
