@@ -13,7 +13,7 @@
 import { openFeed } from './feed.js';
 import { api, paintRoom } from './api.js';
 import { ensureIdentified, remembered } from './me.js';
-import { apply, applyAll, emptyState, liveDeliberations, roomByName, seed } from './store.js';
+import { apply, applyAll, emptyState, liveDeliberations, renamedTo, roomByName, seed } from './store.js';
 import { composerProps } from './composer.js';
 import { createRoomComposerActions } from './room-composer.js';
 import { attachStreamVoting } from './casting.js';
@@ -164,7 +164,17 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
     const next = apply(state, event);
     if (next === state) return; // stale or unknown-and-inert: nothing to redraw
     state = next;
+    follow(event);
     render(event);
+  };
+
+  /** A rename of the open room (#80) moves the address with it: same room, new name, no repaint. */
+  const follow = (/** @type {any} */ event) => {
+    const name = renamedTo(event, openRoom);
+    if (name === null) return;
+    openRoom = name;
+    doc.title = `#${name} · quorum`;
+    win.history?.replaceState({ room: name }, '', `?room=${encodeURIComponent(name)}`);
   };
 
   /** @param {string} name */
@@ -178,6 +188,7 @@ export async function mountRoom({ room, doc = document, now = Date.now, win = wi
       const held = buffered;
       buffered = null;
       state = applyAll(state, held);
+      for (const event of held) follow(event);
       return painted.seq;
     } catch (error) {
       buffered = null;

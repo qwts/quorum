@@ -14,6 +14,7 @@ import { openCommandGuidance } from './command-guidance.ts';
 import { openCommands } from './commands.ts';
 import { openDeliberations } from './deliberation.ts';
 import { openDms, participantResolver } from './dm.ts';
+import { openLifecycle } from './lifecycle.ts';
 import { openIdentity } from './identity.ts';
 import { openPresence, UNOBSERVED, type Presence } from './presence.ts';
 import { currentSession } from './acting.ts';
@@ -428,6 +429,7 @@ export function openQuorum(options: QuorumOptions = {}) {
   // Direct messages compose the same way; their events are audience-scoped
   // through the appendEvent they are handed (docs/deliberation.md §8 seams).
   const dms = openDms({ db, now, appendEvent, requireParticipant });
+  const lifecycle = openLifecycle({ db, now, appendEvent, requireParticipant, requireRoom, isMember });
 
   // Presence reads those same session rows and writes nothing (#17). It is
   // composed here rather than inside identity because it answers the roster's
@@ -674,6 +676,13 @@ export function openQuorum(options: QuorumOptions = {}) {
     readDms: dms.readDms,
     listDmThreads: dms.listDmThreads,
 
+    // Lifecycle verbs (#80), composed from src/domain/lifecycle.ts: what a
+    // room or a status can become after it was created, each one an event.
+    leaveRoom: lifecycle.leaveRoom,
+    renameRoom: lifecycle.renameRoom,
+    setTopic: lifecycle.setTopic,
+    clearStatus: lifecycle.clearStatus,
+
     // The Overlap-checked lease. A grant is refused when a live lease held by
     // someone else covers any of the same paths — and the refusal carries the
     // holder, so the caller can go talk to them instead of guessing.
@@ -899,6 +908,9 @@ export function openQuorum(options: QuorumOptions = {}) {
     listRooms: (viewerId) => api.listRooms({ viewerId }),
     listMembers: (input) => api.listMembers(input),
     postMessage: (input) => api.postMessage(input),
+    leaveRoom: (input) => api.leaveRoom(input),
+    setTopic: (input) => api.setTopic(input),
+    clearStatus: (input) => api.clearStatus(input),
   });
 
   // Delivery-time slash commands (#51). The executed registry's names are

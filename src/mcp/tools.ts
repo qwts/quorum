@@ -10,6 +10,7 @@ import { QuorumError } from '../domain/quorum.ts';
 import { goneQuiet } from '../domain/presence.ts';
 import { callDmTool, DM_TOOLS } from './dms.ts';
 import { WAIT_FOR_EVENTS, waitForEventsTool } from './feed.ts';
+import { callLifecycleTool, LIFECYCLE_TOOLS } from './lifecycle.ts';
 import { commandReply, deliverMessages, footerNote, num, quoted, requireIdentity, str, type Json, type Session, type ToolDefinition, type ToolReply } from './reply.ts';
 
 // The session, the reply shape, and the quoting discipline live in reply.ts,
@@ -326,6 +327,8 @@ export const TOOLS: ToolDefinition[] = [
   // The DM family (requirements 1.1 #7) lives in dms.ts, schemas and
   // handlers together, and slots into the surface here.
   ...DM_TOOLS,
+  // The lifecycle family (#80) lives in lifecycle.ts the same way.
+  ...LIFECYCLE_TOOLS,
   WAIT_FOR_EVENTS,
   CLAIM_SCOPE,
   RENEW_CLAIM,
@@ -402,6 +405,8 @@ export async function callTool(
   // The DM family answers for its own names; everything else is ours.
   const dm = callDmTool(quorum, session, name, args);
   if (dm) return dm;
+  const lifecycle = callLifecycleTool(quorum, session, name, args);
+  if (lifecycle) return lifecycle;
 
   switch (name) {
     case 'identify': {

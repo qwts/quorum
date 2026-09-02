@@ -91,6 +91,21 @@ export const HANDLERS = {
     });
   },
 
+  // Leaving (#80) is the kick fold with the leaver as the participant: the
+  // roster keeps them, the room is one smaller.
+  room_left: (state, { payload }) => {
+    const room = state.rooms.get(payload.room.id);
+    const memberIds = (room?.memberIds ?? []).filter((/** @type {string} */ id) => id !== payload.participant.id);
+    return put(state, 'rooms', payload.room.id, { ...(room ?? payload.room), memberIds, members: memberIds.length });
+  },
+
+  // A rename or a new topic (#80) carries the whole room; membership is
+  // whatever this store already knows, since the payload does not carry it.
+  room_renamed: (state, { payload }) =>
+    put(state, 'rooms', payload.room.id, { ...state.rooms.get(payload.room.id), ...payload.room }),
+  room_topic_set: (state, { payload }) =>
+    put(state, 'rooms', payload.room.id, { ...state.rooms.get(payload.room.id), ...payload.room }),
+
   claim_granted: (state, { payload }) => put(state, 'claims', payload.claim.id, payload.claim),
   claim_renewed: (state, { payload }) => put(state, 'claims', payload.claim.id, payload.claim),
   claim_released: (state, { payload }) => drop(state, 'claims', payload.claim.id),

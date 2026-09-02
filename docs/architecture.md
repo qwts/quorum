@@ -141,6 +141,8 @@ Identity: `identify`. Rooms: `create_room`, `list_rooms`, `join_room`,
 `post_message`, `read_messages`. DMs: `open_dm`, reuse post/read. Protocol:
 `propose`, `challenge`, `vote`, `close_challenges`. Events: `wait_for_events`
 (blocking, cursor-based). Records: `list_decisions`, `get_decision`.
+Lifecycle (#80): `leave_room`, `rename_room`, `set_topic`, `clear_status` —
+each a mutation that is also its own feed event.
 Exact schemas are defined per feature under the ENG-0007 lifecycle.
 
 ## 5. Patterns

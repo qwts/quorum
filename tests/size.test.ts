@@ -41,16 +41,20 @@ const RATCHET = 40;
  */
 const EXCEPTIONS: Record<string, { limit: number; why: string }> = {
   'src/domain/command-set.ts': {
-    limit: 285,
-    why: 'The command registry (#52): one entry per command is the design — adding a command touches only this file — so it grows with the vocabulary. Split when a category earns its own file, not before.',
+    limit: 320,
+    why: 'The command registry (#52): one entry per command is the design — adding a command touches only this file — so it grows with the vocabulary. Split when a category earns its own file, not before. Grew /leave, /topic, and /clear (#80).',
+  },
+  'tests/mcp.test.ts': {
+    limit: 540,
+    why: 'The wire contract, exercised end to end: its catalogue assertion is one line per tool on purpose, so the file grows by one line per tool the surface gains (#80 added four). Split when a family earns its own wire file, as the DM and lifecycle families already have.',
   },
   'src/domain/tree.ts': {
     limit: 290,
     why: 'The identity revocation tree must keep each node mutation, its downward grant and session cascade, the claim-close callback, and the enclosing transaction together. Splitting #74 across modules would make the security invariant look atomic while allowing half a cascade to commit.',
   },
   'src/domain/quorum.ts': {
-    limit: 940,
-    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany. Grew the audience filter (#42), participant status and command composition (#52), the occupants read (#56), the shared claim-refusal record (#15), and identity (#50) — whose tables live in identity.ts, session.ts, and tree.ts, so what lands here is the composition plus the one line of appendEvent that stamps a session on an action, then delivery guidance (#51), presence (#17), and #74\'s claim-close callback, which must share the claim mutation and event. Held flat where real seams exist: schema history is migrate.ts, room resolution is authority.ts, and the lane predicate is lanes.ts (#61) — what lands here for lanes is the composition, the declared cadence on identify, and the wait loop that routes through a lane and keeps its scan position across wakes.',
+    limit: 955,
+    why: 'The domain surface — one transaction boundary per operation, and splitting it would put the event append in a different file from the mutation it must accompany. Grew the audience filter (#42), participant status and command composition (#52), the occupants read (#56), the shared claim-refusal record (#15), and identity (#50) — whose tables live in identity.ts, session.ts, and tree.ts, so what lands here is the composition plus the one line of appendEvent that stamps a session on an action, then delivery guidance (#51), presence (#17), and #74\'s claim-close callback, which must share the claim mutation and event. Held flat where real seams exist: schema history is migrate.ts, room resolution is authority.ts, the lane predicate is lanes.ts (#61) — what lands here for lanes is the composition, the declared cadence on identify, and the wait loop that routes through a lane and keeps its scan position across wakes — and the lifecycle verbs (#80) are lifecycle.ts, composed here.',
   },
   'src/mcp/server.ts': {
     limit: 285,
@@ -60,13 +64,17 @@ const EXCEPTIONS: Record<string, { limit: number; why: string }> = {
     limit: 580,
     why: 'The protocol state machine. Its phases only make sense read together; the seams it does have are documented in docs/deliberation.md §8. Issue #73 adds the ballot-session write and close-time immutable-record annotation at those two phase boundaries; extracting either would hide the D6/D9 transaction it must share.',
   },
+  'src/ui/kit/app/room.js': {
+    limit: 275,
+    why: 'The room controller: the address (URL, history, title), the paint buffer, and the feed, which must agree on what "the open room" is. A rename of the open room (#80) has to move the address, and that belongs beside pushState and popstate, not in a module that cannot see them.',
+  },
   'src/ui/kit/app/room-overlay.js': {
     limit: 300,
     why: 'The overlay lifecycle keeps URL state, immutable-record loading, the persistent challenge composer, and the stable ballot-panel boundary together. Issue #60 splits the ballot selection fold and panel renderer into their own modules; what remains here is the coordination that prevents an event echo from rebuilding either live control.',
   },
   'src/mcp/tools.ts': {
-    limit: 811,
-    why: 'Hand-written JSON Schema, which is verbose by choice — the wire contract is the product (AGENTS.md), so it reads as the contract it is rather than being generated. Ratcheted down when the DM family moved to dms.ts (#42) and again when the feed tool moved to feed.ts (#61); grew list_open_deliberations (#35), then identify\'s asserted provenance inputs (#50) — the contract for an input belongs beside the tool it is an input to, then the delivery footers (#51), then the two presence clauses (#17), which belong beside the guidance they qualify: a file of their own would separate a sentence from the reply it is a sentence in.',
+    limit: 815,
+    why: 'Hand-written JSON Schema, which is verbose by choice — the wire contract is the product (AGENTS.md), so it reads as the contract it is rather than being generated. Ratcheted down when the DM family moved to dms.ts (#42) and again when the feed tool moved to feed.ts (#61); grew list_open_deliberations (#35), then identify\'s asserted provenance inputs (#50) — the contract for an input belongs beside the tool it is an input to, then the delivery footers (#51), then the two presence clauses (#17), which belong beside the guidance they qualify: a file of their own would separate a sentence from the reply it is a sentence in. The lifecycle family (#80) lives in lifecycle.ts and slots in here.',
   },
 };
 

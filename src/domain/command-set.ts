@@ -42,6 +42,11 @@ export type Deps = {
   listRooms: (viewerId: string) => (Room & { members: number })[];
   listMembers: (input: { room: string; viewerId?: string | null }) => Participant[];
   postMessage: (input: { room: string; participantId: string; body: string; deliberationId?: string }) => Message;
+  // Lifecycle verbs (#80) reach back through the api like createRoom does,
+  // so a command and its tool twin are one implementation.
+  leaveRoom: (input: { room: string; participantId: string }) => Room;
+  setTopic: (input: { room: string; participantId: string; topic: string | null }) => { room: Room; changed: boolean };
+  clearStatus: (input: { participantId: string }) => Participant;
 };
 
 export type Ctx = {
@@ -225,6 +230,32 @@ export function buildRegistry(deps: Deps): Command[] {
       },
     },
     {
+      name: 'leave',
+      category: 'rooms',
+      summary: 'leave this room; the room and its record stay',
+      usage: '/leave',
+      // Answer-class like /room: the departure announces itself (room_left),
+      // and a recorded line would have to post to a room the sender has
+      // just left.
+      recorded: false,
+      run: ({ sender, room }) => {
+        const left = deps.leaveRoom({ room: room().id, participantId: sender.id });
+        return `You left #${left.name}. /list shows where else you can go; join_room brings you back.`;
+      },
+    },
+    {
+      name: 'topic',
+      category: 'rooms',
+      summary: 'set this room\'s topic, or bare /topic to clear it (room creator)',
+      usage: '/topic [text]',
+      recorded: true,
+      run: ({ sender, args, room }) => {
+        const { room: where, changed } = deps.setTopic({ room: room().id, participantId: sender.id, topic: args || null });
+        if (!changed) return where.topic ? `Topic of #${where.name} was already: ${where.topic}` : `#${where.name} had no topic to clear.`;
+        return where.topic ? `Topic of #${where.name} is now: ${where.topic}` : `Topic of #${where.name} cleared.`;
+      },
+    },
+    {
       name: 'who',
       category: 'rooms',
       summary: 'who is in this room, in join order',
@@ -266,6 +297,18 @@ export function buildRegistry(deps: Deps): Command[] {
       run: ({ sender, args }) => {
         if (!args) throw new QuorumError('say what you are blocked by: /blocked <reason>');
         return setStatus(sender, args, 'blocked');
+      },
+    },
+    {
+      name: 'clear',
+      category: 'presence',
+      summary: 'clear your status or blocked line from the roster',
+      usage: '/clear',
+      recorded: true,
+      run: ({ sender }) => {
+        const was = sender.status;
+        deps.clearStatus({ participantId: sender.id });
+        return was ? `Cleared your ${was.kind === 'blocked' ? 'blocked line' : 'status'}.` : 'You had no status to clear.';
       },
     },
   ];
