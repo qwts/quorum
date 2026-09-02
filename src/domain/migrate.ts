@@ -139,6 +139,13 @@ export const MIGRATIONS: Migration[] = [
       addColumn(db, 'ballots', 'session_id', 'TEXT REFERENCES sessions(id)');
     },
   },
+  {
+    id: 4,
+    name: 'participants: the declared response cadence (#61)',
+    up(db) {
+      addColumn(db, 'participants', 'cadence', 'TEXT');
+    },
+  },
 ];
 
 /**
