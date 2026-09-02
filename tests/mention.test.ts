@@ -99,6 +99,39 @@ test('a mention resolves against the roster of the room it is posted in, and onl
   quorum.close();
 });
 
+test('a non-member mention wakes nobody: the directed lane follows the resolved forks, not the text', async () => {
+  const quorum = fresh();
+  const ada = agent(quorum, 'ada');
+  const mallory = agent(quorum, 'mallory');
+  quorum.createRoom({ name: 'public', by: ada.id }); // public: mallory can read it without joining
+  const before = quorum.latestSeq();
+  quorum.postMessage({ room: 'public', participantId: ada.id, body: '@mallory is not in here' });
+
+  const all = await quorum.waitForEvents({ afterSeq: before, timeoutMs: 0, participantId: mallory.id });
+  assert.equal(all.length, 1, 'the room is public, so the event is visible on the all lane');
+  const directed = await quorum.waitForEvents({ afterSeq: before, timeoutMs: 0, participantId: mallory.id, lane: 'directed' });
+  assert.deepEqual(directed, [], 'but it did not resolve to her, so it does not address her');
+  quorum.close();
+});
+
+test('combining marks are name characters, and both sides are NFC-normalized', () => {
+  const quorum = fresh();
+  const ada = agent(quorum, 'ada');
+  const jose = agent(quorum, 'José'); // NFC: precomposed é
+  const plain = agent(quorum, 'Jose');
+  quorum.createRoom({ name: 'accents', by: ada.id });
+  quorum.joinRoom({ room: 'accents', participantId: jose.id });
+  quorum.joinRoom({ room: 'accents', participantId: plain.id });
+
+  // Decomposed in the body, precomposed on the roster: still José, and not Jose.
+  const decomposed = quorum.postMessage({ room: 'accents', participantId: ada.id, body: '@Jose\u0301 hola' });
+  assert.deepEqual(decomposed.forks.map((fork) => fork.participantId), [jose.id]);
+  // The bare name is Jose alone.
+  const bare = quorum.postMessage({ room: 'accents', participantId: ada.id, body: '@Jose hola' });
+  assert.deepEqual(bare.forks.map((fork) => fork.participantId), [plain.id]);
+  quorum.close();
+});
+
 test('two members sharing a name are both mentioned, and the fork lands in the thread a DM would', () => {
   const quorum = fresh();
   const ada = agent(quorum, 'ada');

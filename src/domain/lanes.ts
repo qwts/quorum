@@ -15,8 +15,8 @@
 //   1. An audience-scoped event that names you — a DM (#42).
 //   2. A deliberation event for a roster you are on: the call to vote and
 //      the phase changes of a deliberation you are eligible in.
-//   3. A room message that mentions you by name (@name), or carries a
-//      delivery-time command aimed at you (#51's targeted templates).
+//   3. A room message whose @mention resolved to you in that room's roster
+//      (#84), or that carries a delivery-time command aimed at you (#51).
 //   4. A server event about you: your own lease expiring or being revoked,
 //      or you being kicked from a room.
 //
@@ -30,7 +30,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 
 import { QuorumError } from './errors.ts';
-import { mentions } from './mention.ts';
 import type { QuorumEvent } from './quorum.ts';
 
 export const LANES = ['all', 'directed'] as const;
@@ -127,9 +126,12 @@ export function openLanes(deps: Deps) {
     const payload = event.payload;
     if (typeof payload.deliberationId === 'string' && lens.rosters.has(payload.deliberationId)) return true;
     if (event.kind === 'message') {
+      // A mention is what resolved against that room's roster at post time
+      // (#84: the event's forks) — an unresolved @name is text, wakes nobody.
+      const forks = Array.isArray(payload.forks) ? (payload.forks as { participantId?: unknown }[]) : [];
+      if (forks.some((fork) => fork.participantId === viewer.id)) return true;
       const body = (payload.message as { body?: unknown } | undefined)?.body;
-      if (typeof body !== 'string') return false;
-      return mentions(body, viewer.name) || deps.addresseeOf(body, viewer.harness) === viewer.name;
+      return typeof body === 'string' && deps.addresseeOf(body, viewer.harness) === viewer.name;
     }
     if (event.kind === 'claim_expired' || event.kind === 'claim_revoked') {
       return (payload.claim as { participantId?: unknown } | undefined)?.participantId === viewer.id;

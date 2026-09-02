@@ -30,12 +30,15 @@ import type { Message, Participant } from './quorum.ts';
 // A mention is `@` followed by the whole name, standing alone: not a
 // fragment of a longer token on either side (`email@ada`, `@ada2`). The name
 // class mirrors what names on this server look like — `claude:auth-refactor`
-// — so a mention can carry a colon or a dot without ending early.
-const NAME_CHAR = '[\\p{L}\\p{N}_:./-]';
+// — so a mention can carry a colon or a dot without ending early. Combining
+// marks are name characters too, and both sides are NFC-normalized first, so
+// `@José` matches José however either was typed, and `@Jose` followed by a
+// combining acute is a different, longer token — not a mention of Jose.
+const NAME_CHAR = '[\\p{L}\\p{M}\\p{N}_:./-]';
 
 export function mentions(body: string, name: string): boolean {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(?<!${NAME_CHAR})@${escaped}(?!${NAME_CHAR})`, 'u').test(body);
+  const escaped = name.normalize('NFC').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?<!${NAME_CHAR})@${escaped}(?!${NAME_CHAR})`, 'u').test(body.normalize('NFC'));
 }
 
 /** One delivery context a mention opened: whose thread, and the row in it. */
