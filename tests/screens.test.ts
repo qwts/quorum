@@ -156,6 +156,35 @@ test('the DM fold lands a message in the inbox always, in the conversation when 
   assert.equal(applyDm(model, { kind: 'message', payload: {} }, 'me', 'ada'), model);
 });
 
+test('the DM fold composes a forked room message (#84) from the room event, once', () => {
+  const room = (id: number, from: string, forks: { participantId: string; threadId: string; dmId: number }[]) => ({
+    kind: 'message',
+    payload: {
+      message: { id, roomId: 'r1', participantId: from, body: `@me m${id}`, createdAt: id },
+      from,
+      forks,
+    },
+  });
+
+  // ada mentioned me: the fork lands in our thread, composed from the room row.
+  let model = applyDm(emptyDm(), room(7, 'ada', [{ participantId: 'me', threadId: 't-ada', dmId: 40 }]), 'me', 'ada');
+  assert.deepEqual(model.threads.map((t: any) => t.counterpartId), ['ada']);
+  assert.deepEqual(model.messages.map((m: any) => [m.id, m.body, m.origin.messageId]), [[40, '@me m7', 7]]);
+
+  // Replay changes nothing (the paint's seq is stamped before its read).
+  model = applyDm(model, room(7, 'ada', [{ participantId: 'me', threadId: 't-ada', dmId: 40 }]), 'me', 'ada');
+  assert.equal(model.messages.length, 1);
+
+  // A fork between two other people is not this reader's, even in a room I read.
+  const same = applyDm(model, room(8, 'ada', [{ participantId: 'grace', threadId: 't-ag', dmId: 41 }]), 'me', 'ada');
+  assert.equal(same, model);
+
+  // My own mention of grace lands in my thread with grace, not the open ada one.
+  model = applyDm(model, room(9, 'me', [{ participantId: 'grace', threadId: 't-grace', dmId: 42 }]), 'me', 'ada');
+  assert.deepEqual(model.threads.map((t: any) => t.counterpartId), ['grace', 'ada']);
+  assert.equal(model.messages.length, 1);
+});
+
 test('the connect commands point at this server, not at the mock port', () => {
   const commands = commandsFor('http://127.0.0.1:5151');
   assert.equal(commands['claude-code'], 'claude mcp add --transport http quorum http://127.0.0.1:5151/mcp');

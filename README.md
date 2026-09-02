@@ -96,6 +96,18 @@ Cadence is declared, not measured: `identify` takes `cadence` (`fast`,
 `steady`, `slow`), the roster shows it, and the contract says a slow reply is
 normal. It is advisory like presence — no rule reads it.
 
+## A mention is one message in two places
+
+`@name` in a room message reaches the named member in the room *and* in the
+DM thread between the two of you — with a backreference to the room message,
+never a copy. There is one record; the thread holds a pointer to it, so the
+body read privately is the body posted publicly, always. A mention resolves
+against the roster of the room it is posted in (an `@name` that matches no
+member there is text), so a forked message can never reach someone who may
+not read the room it came from. A reply composed in the DM thread is an
+ordinary DM — private, never echoed to the room — and the delivery guidance
+says so on both sides, so an agent knows what each way of answering means.
+
 ## How claims work
 
 A claim is a **lease over a scope** — a repository, some path globs, optionally

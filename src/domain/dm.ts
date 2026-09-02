@@ -28,6 +28,11 @@ export type DmMessage = {
   participantId: string;
   body: string;
   createdAt: number;
+  // Set when this row is a delivery context for a room message (#84): an
+  // @mention surfaced the room message here. The body above is read through
+  // the reference — the room row is the one record — and the origin says
+  // where a reply in public would go.
+  origin: { messageId: number; roomId: string; roomName: string } | null;
 };
 
 // What a DM inbox lists: the thread, who the other person is, and the last
@@ -54,7 +59,25 @@ export type Deps = {
 };
 
 type ThreadRow = { id: string; low_id: string; high_id: string; created_at: number };
-type MessageRow = { id: number; thread_id: string; participant_id: string; body: string; created_at: number };
+type MessageRow = {
+  id: number;
+  thread_id: string;
+  participant_id: string;
+  body: string;
+  created_at: number;
+  message_id: number | null;
+  room_id: string | null;
+  room_name: string | null;
+};
+
+// Every read of a thread goes through this join, so a forked room message
+// (#84) is delivered with the body it has *now* and never with a copy.
+const THREAD_READ = `
+  SELECT d.id, d.thread_id, d.participant_id, d.created_at, d.message_id,
+         COALESCE(m.body, d.body) AS body, m.room_id, r.name AS room_name
+    FROM dm_messages d
+    LEFT JOIN messages m ON m.id = d.message_id
+    LEFT JOIN rooms r ON r.id = m.room_id`;
 
 // A participant by id, or by name when exactly one participant has it.
 // Identity is (name, harness), so two harnesses can share a name; an
@@ -97,6 +120,10 @@ export function openDms(deps: Deps) {
       participantId: row.participant_id,
       body: row.body,
       createdAt: row.created_at,
+      origin:
+        row.message_id === null
+          ? null
+          : { messageId: row.message_id, roomId: row.room_id ?? '', roomName: row.room_name ?? '' },
     };
   }
 
@@ -111,9 +138,26 @@ export function openDms(deps: Deps) {
     return row ? toThread(row) : null;
   }
 
+  // The thread is created by the first use and found again by the pair, so
+  // it survives reconnects and restarts the same way identity does (1.1 #10).
+  // Shared with mentions (#84): a fork lands in the same thread a DM would.
+  function threadFor(aId: string, bId: string): DmThread {
+    const found = threadBetween(aId, bId);
+    if (found) return found;
+    const [low, high] = aId < bId ? [aId, bId] : [bId, aId];
+    const thread: DmThread = { id: randomUUID(), participants: [low, high], createdAt: now() };
+    db.prepare('INSERT INTO dm_threads (id, low_id, high_id, created_at) VALUES (?, ?, ?, ?)').run(
+      thread.id,
+      low,
+      high,
+      thread.createdAt,
+    );
+    return thread;
+  }
+
   return {
-    // The thread is created by the first send and found again by the pair, so
-    // it survives reconnects and restarts the same way identity does (1.1 #10).
+    threadFor,
+
     sendDm(input: { participantId: string; to: string; body: string }): {
       message: DmMessage;
       thread: DmThread;
@@ -125,18 +169,7 @@ export function openDms(deps: Deps) {
       const body = input.body?.trim();
       if (!body) throw new QuorumError('message body is required');
 
-      let thread = threadBetween(sender.id, counterpart.id);
-      if (!thread) {
-        const [low, high] = sender.id < counterpart.id ? [sender.id, counterpart.id] : [counterpart.id, sender.id];
-        thread = { id: randomUUID(), participants: [low, high], createdAt: now() };
-        db.prepare('INSERT INTO dm_threads (id, low_id, high_id, created_at) VALUES (?, ?, ?, ?)').run(
-          thread.id,
-          low,
-          high,
-          thread.createdAt,
-        );
-      }
-
+      const thread = threadFor(sender.id, counterpart.id);
       const at = now();
       const result = db
         .prepare('INSERT INTO dm_messages (thread_id, participant_id, body, created_at) VALUES (?, ?, ?, ?)')
@@ -147,6 +180,7 @@ export function openDms(deps: Deps) {
         participantId: sender.id,
         body,
         createdAt: at,
+        origin: null,
       };
       appendEvent('dm_message', null, { message, thread, from: sender.name, to: counterpart.name }, sender.id, [
         ...thread.participants,
@@ -174,7 +208,7 @@ export function openDms(deps: Deps) {
       if (!thread) return { messages: [], thread: null, counterpart };
       const limit = Math.min(Math.max(input.limit ?? 50, 1), 500);
       const rows = db
-        .prepare('SELECT * FROM dm_messages WHERE thread_id = ? AND id > ? ORDER BY id LIMIT ?')
+        .prepare(`${THREAD_READ} WHERE d.thread_id = ? AND d.id > ? ORDER BY d.id LIMIT ?`)
         .all(thread.id, input.afterId ?? 0, limit) as MessageRow[];
       return { messages: rows.map(toMessage), thread, counterpart };
     },
@@ -187,9 +221,9 @@ export function openDms(deps: Deps) {
         .prepare('SELECT * FROM dm_threads WHERE low_id = ? OR high_id = ? ORDER BY created_at')
         .all(me.id, me.id) as ThreadRow[];
       const summaries = rows.map((row) => {
-        const last = db
-          .prepare('SELECT * FROM dm_messages WHERE thread_id = ? ORDER BY id DESC LIMIT 1')
-          .get(row.id) as MessageRow | undefined;
+        const last = db.prepare(`${THREAD_READ} WHERE d.thread_id = ? ORDER BY d.id DESC LIMIT 1`).get(row.id) as
+          | MessageRow
+          | undefined;
         return {
           id: row.id,
           counterpart: requireParticipant(row.low_id === me.id ? row.high_id : row.low_id),

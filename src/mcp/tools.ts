@@ -536,9 +536,18 @@ export async function callTool(
         body: str(args, 'body') ?? '',
       });
       if (command) return commandReply(command, message);
+      // A mention forked the message into a DM thread (#84): say to whom.
+      const forks = message?.forks ?? [];
+      const forked =
+        forks.length === 0
+          ? ''
+          : ` It mentions ${forks.map((fork) => quoted(fork.name)).join(', ')}, so it also sits in your DM thread with` +
+            ` ${forks.length === 1 ? 'them' : 'each of them'} — they may answer in the room or privately with send_dm;` +
+            ` a private answer reaches you as a DM on this same feed.`;
       return {
         guidance:
           `Posted. Others are woken by it.` +
+          forked +
           ` If you expect an answer, call wait_for_events with after_seq=${session.cursor} rather than asking again` +
           ` — that is your own cursor, so anything you have not seen yet still reaches you.` +
           ` Your own post is on that feed as well, marked by_you: true; waiting again gets you the reply.`,

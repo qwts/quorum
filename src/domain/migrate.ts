@@ -146,6 +146,13 @@ export const MIGRATIONS: Migration[] = [
       addColumn(db, 'participants', 'cadence', 'TEXT');
     },
   },
+  {
+    id: 5,
+    name: 'dm_messages: the room message a mention forked into the thread (#84)',
+    up(db) {
+      addColumn(db, 'dm_messages', 'message_id', 'INTEGER REFERENCES messages(id)');
+    },
+  },
 ];
 
 /**

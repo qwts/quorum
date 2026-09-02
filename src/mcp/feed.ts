@@ -60,6 +60,12 @@ function roomLabel(names: Map<string, string>, roomId: string | null): string {
   return name === undefined ? 'a room' : quoted(name);
 }
 
+// Whether a message event forked into the viewer's DM thread (#84).
+function forksTo(event: QuorumEvent, viewerId: string | null): boolean {
+  if (event.kind !== 'message' || viewerId === null || !Array.isArray(event.payload.forks)) return false;
+  return (event.payload.forks as { participantId?: unknown }[]).some((fork) => fork.participantId === viewerId);
+}
+
 function counted(pairs: [string, number][]): string {
   return pairs.map(([label, count]) => `${label} ${count}`).join(', ');
 }
@@ -103,6 +109,17 @@ function digestOf(
           ? `Ballot open in ${room}, closes in ${left} — you have cast; a re-cast replaces it.`
           : `Ballot open in ${room}, closes in ${left} — vote.`
         : `Challenge window open in ${room}, closes in ${left} — challenge, or wait for voting_opened.`,
+    );
+  }
+  // A room message that @mentioned the viewer (#84) sits in their DM thread
+  // with the author too; say so, and what each way of answering means.
+  const forkedToViewer = events.filter((event) => forksTo(event, viewerId));
+  if (forkedToViewer.length > 0) {
+    const authors = [...new Set(forkedToViewer.map((event) => String(event.payload.from)))].map((name) => quoted(name)).join(', ');
+    parts.push(
+      `Seq ${forkedToViewer.map((event) => event.seq).join(', ')} mention${forkedToViewer.length === 1 ? 's' : ''} you` +
+        ` and also sit${forkedToViewer.length === 1 ? 's' : ''} in your DM thread with ${authors}` +
+        ` — answer in the room with post_message (everyone sees it) or privately with send_dm (only ${authors} does).`,
     );
   }
   if (lane === 'directed' && triage.passedOver.total > 0) {
