@@ -25,7 +25,7 @@ test('drafts skip all jobs and ready updates cancel by PR', () => {
 test('actor and fork enforcement is loaded from a trusted immutable commit', () => {
   assert.match(
     ci,
-    /uses: qwts\/playbook-engineering\/\.github\/actions\/ci-policy@5455a3f5939369ea843b1bbb4d2573739f4381a6/,
+    /uses: qwts\/qwts-agent-ci\/\.github\/actions\/ci-policy@3a5617b287d922e37f262210a1d8750d8217b56d/,
   );
   assert.doesNotMatch(ci, /uses: \.\/\.github\/actions\/ci-policy/);
   assert.match(ci, /permissions:\n  actions: read\n  contents: read/);
